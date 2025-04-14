@@ -28,6 +28,8 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                 assert!(cmd.try_send(&mut output[0], &bytes).is_sent());
             };
         }
+      //  16M limit const
+      //  shutdown remote signal?
 
         if cmd.vacant_units(&mut output[1])>0 {
             if let Some(value) = cmd.try_take(&mut generator) {
