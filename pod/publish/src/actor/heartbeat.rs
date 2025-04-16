@@ -31,9 +31,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                        cmd.wait_vacant(&mut heartbeat_tx, 1));
 
         let _ = cmd.try_send(&mut heartbeat_tx, state.count);
-
         state.count += 1;
         if beats == state.count {
+            cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::IgnoreAndWait).await;
             info!("request graph stop");
             cmd.request_graph_stop();
         }

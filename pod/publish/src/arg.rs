@@ -4,6 +4,6 @@ use clap::Parser;
 pub(crate) struct MainArg {
     #[arg(short = 'r', long = "rate", default_value = "1000")]
     pub(crate) rate_ms: u64,
-    #[arg(short = 'b', long = "beats", default_value = "60")]
+    #[arg(short = 'b', long = "beats", default_value = "600")]
     pub(crate) beats: u64,
 }

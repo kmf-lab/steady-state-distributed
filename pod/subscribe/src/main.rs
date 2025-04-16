@@ -29,7 +29,7 @@ fn main() {
         .use_ipc()
         .build();
 
-    input_tx.build_aqueduct(AqueTech::Aeron(aeron_channel,23)
+    input_tx.build_aqueduct(AqueTech::Aeron(aeron_channel,40)
                              ,&mut actor_builder.with_name("aeron")
                              ,&mut Threading::Spawn
     );
