@@ -1,3 +1,4 @@
+use std::env;
 use steady_state::*;
 //bring into lib
 use arg::MainArg;
@@ -10,12 +11,19 @@ pub(crate) mod actor {
 }
 
 fn main() {
+    unsafe {
+        env::set_var("TELEMETRY_SERVER_PORT", "9101");
+        env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
+    }
+
     let cli_args = MainArg::parse();
     let _ = init_logging(LogLevel::Info);
     let mut graph = GraphBuilder::default()
            .build(cli_args); //or pass () if no args
 
-    let channel_builder = graph.channel_builder();
+    let channel_builder = graph.channel_builder()
+        .with_filled_trigger(Trigger::PercentileAbove(Percentile::p80(),Filled::p50()),AlertColor::Orange)
+        .with_filled_percentile(Percentile::p80());
 
     let (output_tx,output_rx) = channel_builder.build_stream_bundle::<StreamSimpleMessage,2>(1000);
 
