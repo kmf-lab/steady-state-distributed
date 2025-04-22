@@ -18,24 +18,37 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
     let mut output = output.lock().await;
 
     while cmd.is_running(|| heartbeat.is_closed_and_empty() && generator.is_closed_and_empty() && output.mark_closed()) {
-
+        // await until we have work to do
         await_for_any!(cmd.wait_avail(&mut heartbeat,1),
                        cmd.wait_avail(&mut generator,1));
 
-        if let Some(value) = cmd.try_peek(&mut heartbeat) {
-            if cmd.wait_vacant(&mut output[0], (1, 8)).await {
-               let bytes = value.to_be_bytes();
-               assert!(cmd.try_send(&mut output[0], &bytes).is_sent());
-               cmd.advance_read_index(&mut heartbeat, 1);
+        //TODO: mCPU should never have .000 plus max percentile is 100 not 127!!
+        //TODO: need a timeout here so we can upate our telemetry!!
+        //      this pattern is way too complex.
+        if cmd.avail_units(&mut heartbeat)>0 {
+            await_for_all_or_proceed_upon!(cmd.wait_periodic(Duration::from_millis(30)),
+                                           cmd.wait_vacant(&mut output[0],(1,8)));
+            if cmd.vacant_units(&mut output[0])>0 {
+                if let Some(value) = cmd.try_take(&mut heartbeat) {
+                    let bytes = value.to_be_bytes();
+                    assert!(cmd.try_send(&mut output[0], &bytes).is_sent());
+                };
             }
         }
-        if let Some(value) = cmd.try_peek(&mut generator) {
-            if cmd.wait_vacant(&mut output[1], (1, 8)).await {
-               let bytes = value.to_be_bytes();
-               assert!(cmd.try_send(&mut output[1], &bytes).is_sent());
-                cmd.advance_read_index(&mut generator, 1);
+
+//TODO: this (1,8) is a real mess..
+        if cmd.avail_units(&mut generator)>0 {
+            await_for_all_or_proceed_upon!(cmd.wait_periodic(Duration::from_millis(30)),
+                                           cmd.wait_vacant(&mut output[1],(1,8)));
+            if cmd.vacant_units(&mut output[1])>0 {
+                if let Some(value) = cmd.try_take(&mut generator) {
+                    let bytes = value.to_be_bytes();
+                    assert!(cmd.try_send(&mut output[1], &bytes).is_sent());
+                };
             }
+
         }
+
     }
     Ok(())
 }
