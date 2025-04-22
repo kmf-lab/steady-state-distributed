@@ -18,26 +18,24 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
     let mut output = output.lock().await;
 
     while cmd.is_running(|| heartbeat.is_closed_and_empty() && generator.is_closed_and_empty() && output.mark_closed()) {
-        // await until we have work to do
+
         await_for_any!(cmd.wait_avail(&mut heartbeat,1),
                        cmd.wait_avail(&mut generator,1));
 
-        if cmd.vacant_units(&mut output[0])>0 {
-            if let Some(value) = cmd.try_take(&mut heartbeat) {
-                let bytes = value.to_be_bytes();
-                assert!(cmd.try_send(&mut output[0], &bytes).is_sent());
-            };
+        if let Some(value) = cmd.try_peek(&mut heartbeat) {
+            if cmd.wait_vacant(&mut output[0], (1, 8)).await {
+               let bytes = value.to_be_bytes();
+               assert!(cmd.try_send(&mut output[0], &bytes).is_sent());
+               cmd.advance_read_index(&mut heartbeat, 1);
+            }
         }
-      //  16M limit const
-      //  shutdown remote signal?
-
-        if cmd.vacant_units(&mut output[1])>0 {
-            if let Some(value) = cmd.try_take(&mut generator) {
-                let bytes = value.to_be_bytes();
-                assert!(cmd.try_send(&mut output[1], &bytes).is_sent());
-            };
+        if let Some(value) = cmd.try_peek(&mut generator) {
+            if cmd.wait_vacant(&mut output[1], (1, 8)).await {
+               let bytes = value.to_be_bytes();
+               assert!(cmd.try_send(&mut output[1], &bytes).is_sent());
+                cmd.advance_read_index(&mut generator, 1);
+            }
         }
-
     }
     Ok(())
 }

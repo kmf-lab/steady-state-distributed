@@ -12,7 +12,7 @@ pub(crate) mod actor {
 
 fn main() {
     unsafe {
-        env::set_var("TELEMETRY_SERVER_PORT", "9101");
+        env::set_var("TELEMETRY_SERVER_PORT", "5551");
         env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
     }
 
@@ -22,15 +22,20 @@ fn main() {
            .build(cli_args); //or pass () if no args
 
     let channel_builder = graph.channel_builder()
-        .with_filled_trigger(Trigger::PercentileAbove(Percentile::p80(),Filled::p50()),AlertColor::Orange)
-        .with_filled_percentile(Percentile::p80());
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p90()),AlertColor::Red)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p60()),AlertColor::Orange)
+        .with_avg_filled()
+        .with_avg_rate()
+        .with_filled_percentile(Percentile::p80());//is 128 need max of 100!!
 
     let (output_tx,output_rx) = channel_builder.build_stream_bundle::<StreamSimpleMessage,2>(1000);
 
     let (heartbeat_tx,heartbeat_rx) = channel_builder.build_channel();
     let (generator_tx,generator_rx) = channel_builder.build_channel();
 
-    let actor_builder = graph.actor_builder().with_mcpu_avg();
+    let actor_builder = graph.actor_builder()
+                                .with_load_avg()
+                                .with_mcpu_avg();
 
     let state = new_state();
     actor_builder.with_name("heartbeat")
@@ -52,7 +57,7 @@ fn main() {
         .build();
 
     output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel,40)
-                             ,&mut actor_builder.with_name("aeron")
+                             ,&mut actor_builder.with_name("publish")
                              ,&mut Threading::Spawn
                              );
 

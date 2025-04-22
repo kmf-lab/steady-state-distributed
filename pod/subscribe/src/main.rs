@@ -12,7 +12,7 @@ pub(crate) mod actor {
 fn main() {
 
     unsafe {
-        env::set_var("TELEMETRY_SERVER_PORT", "9102");
+        env::set_var("TELEMETRY_SERVER_PORT", "5552");
         env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
     }
 
