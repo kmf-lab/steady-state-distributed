@@ -28,7 +28,7 @@ fn main() {
     let (input_tx,input_rx) = channel_builder.build_stream_bundle::<_,2>(1000);
 
     let (heartbeat_tx,heartbeat_rx) = channel_builder.build();
-    let (generator_tx,generator_rx) = channel_builder.build();
+    let (generator_tx,generator_rx) = channel_builder.with_capacity(640).build();
     let (worker_tx,worker_rx) = channel_builder.build();
 
     let actor_builder = graph.actor_builder().with_mcpu_avg();
@@ -43,18 +43,21 @@ fn main() {
                              ,&mut Threading::Spawn
     );
 
+    let mut team = ActorTeam::new(&graph);
+
     actor_builder.with_name("deserialize")
         .build( move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone()) }
-                , &mut Threading::Spawn);
+                , &mut Threading::Join(&mut team));
 
     actor_builder.with_name("worker")
         .build( move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) }
-               , &mut Threading::Spawn);
+               , &mut Threading::Join(&mut team));
 
     actor_builder.with_name("logger")
         .build( move |context| { actor::logger::run(context, worker_rx.clone()) }
-               , &mut Threading::Spawn);
+               , &mut Threading::Join(&mut team));
 
+    team.spawn();
 
     //startup entire graph
     graph.start();

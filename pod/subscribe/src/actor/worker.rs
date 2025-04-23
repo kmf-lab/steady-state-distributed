@@ -39,8 +39,11 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut logger = logger.lock().await;
 
     while cmd.is_running(|| heartbeat.is_closed_and_empty() && generator.is_closed_and_empty() && logger.mark_closed()) {
-        let _clean = await_for_all!(cmd.wait_avail(&mut heartbeat,1)
-                                  , cmd.wait_avail(&mut generator,1));
+
+        let _clean =  await_for_all!(cmd.wait_vacant(&mut logger, 1),
+                                     cmd.wait_avail(&mut heartbeat, 1),
+                                     cmd.wait_avail(&mut generator, 48)
+                                  );
 
         if let Some(h) = cmd.try_take(&mut heartbeat) {
             //for each beat we empty the generated data
