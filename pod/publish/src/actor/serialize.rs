@@ -9,47 +9,37 @@ pub(crate) async fn run(context: SteadyContext
     internal_behavior(cmd, heartbeat, generator, output).await
 }
 
-async fn internal_behavior<T: SteadyCommander>(mut cmd: T
+async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                                , heartbeat: SteadyRx<u64>
                                                , generator: SteadyRx<u64>
                                                , output: SteadyStreamTxBundle<StreamSimpleMessage,2>) -> Result<(),Box<dyn Error>> {
-    let mut heartbeat = heartbeat.lock().await;
-    let mut generator = generator.lock().await;
-    let mut output = output.lock().await;
+    let mut rx_heartbeat = heartbeat.lock().await;
+    let mut rx_generator = generator.lock().await;
+    let mut output = output.lock().await; //private vec of guards of streams
+    //pull out of vec of guards so we can give them great names
+    let mut tx_generator = output.remove(1);//start at the end.
+    let mut tx_heartbeat = output.remove(0);
 
-    //TODO: mCPU should never have .000 plus max percentile is 100 not 127!!
+    while cmd.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed_and_empty() && output.mark_closed()) {
 
+        await_for_any!(
+            wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,(1,8))),
+            wait_for_all!(cmd.wait_avail(&mut rx_generator,1),cmd.wait_vacant(&mut tx_generator,(1,8)))
+        );
 
-    while cmd.is_running(|| heartbeat.is_closed_and_empty() && generator.is_closed_and_empty() && output.mark_closed()) {
-        // await until we have work to do
-        await_for_any!(cmd.wait_vacant(&mut output[0],(1,8)),
-                       cmd.wait_periodic(Duration::from_millis(30)));
+        if cmd.vacant_units(&mut tx_heartbeat)>0 {
+            if let Some(value) = cmd.try_take(&mut rx_heartbeat) {
+                let bytes = value.to_be_bytes();
+                assert!(cmd.try_send(&mut tx_heartbeat, &bytes).is_sent());
+            };
+        }
 
-        //TODO: need a timeout here so we can upate our telemetry!!
-        //      this pattern is way too complex.
-        // if cmd.avail_units(&mut heartbeat)>0 {
-        //     await_for_all_or_proceed_upon!(cmd.wait_periodic(Duration::from_millis(30)),
-        //                                    cmd.wait_vacant(&mut output[0],(1,8)));
-            if cmd.vacant_units(&mut output[0])>0 {
-                if let Some(value) = cmd.try_take(&mut heartbeat) {
-                    let bytes = value.to_be_bytes();
-                    assert!(cmd.try_send(&mut output[0], &bytes).is_sent());
-                };
-            }
-        // }
-
-//TODO: this (1,8) is a real mess..
-//         if cmd.avail_units(&mut generator)>0 {
-//             await_for_all_or_proceed_upon!(cmd.wait_periodic(Duration::from_millis(30)),
-//                                            cmd.wait_vacant(&mut output[1],(1,8)));
-            if cmd.vacant_units(&mut output[1])>0 {
-                if let Some(value) = cmd.try_take(&mut generator) {
-                    let bytes = value.to_be_bytes();
-                    assert!(cmd.try_send(&mut output[1], &bytes).is_sent());
-                };
-            }
-
-       // }
+        if cmd.vacant_units(&mut tx_generator)>0 {
+            if let Some(value) = cmd.try_take(&mut rx_generator) {
+                let bytes = value.to_be_bytes();
+                assert!(cmd.try_send(&mut tx_generator, &bytes).is_sent());
+            };
+        }
 
     }
     Ok(())
