@@ -23,6 +23,7 @@ fn main() {
 
     let channel_builder = graph.channel_builder()
         .with_filled_trigger(Trigger::PercentileAbove(Percentile::p80(),Filled::p50()),AlertColor::Orange)
+        .with_avg_filled()
         .with_filled_percentile(Percentile::p80());
 
     let (input_tx,input_rx) = channel_builder.build_stream_bundle::<_,2>(1000);
