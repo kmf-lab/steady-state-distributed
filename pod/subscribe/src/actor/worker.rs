@@ -39,10 +39,10 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut logger = logger.lock().await;
 
     while cmd.is_running(|| heartbeat.is_closed_and_empty() && generator.is_closed_and_empty() && logger.mark_closed()) {
-
+        let mut items_per_tick = 10;
         let _clean =  await_for_all!(cmd.wait_vacant(&mut logger, 1),
                                      cmd.wait_avail(&mut heartbeat, 1),
-                                     cmd.wait_avail(&mut generator, 48)
+                                     cmd.wait_avail(&mut generator, items_per_tick)
                                   );
 
         if let Some(h) = cmd.try_take(&mut heartbeat) {
@@ -52,6 +52,10 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                 //      is full. Another popular choice is Warn so it logs if it gets filled.
                 cmd.send_async(&mut logger, FizzBuzzMessage::new(item)
                                           , SendSaturation::IgnoreAndWait).await;
+                items_per_tick-=1;
+                if 0==items_per_tick {
+                    break;
+                }
             }
         }
     }

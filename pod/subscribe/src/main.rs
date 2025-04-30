@@ -26,17 +26,29 @@ fn main() {
         .with_avg_filled()
         .with_filled_percentile(Percentile::p80());
 
-    let (input_tx,input_rx) = channel_builder.build_stream_bundle::<_,2>(1000);
+    let (input_tx,input_rx) = channel_builder
+        .with_capacity(6400)
+        .build_stream_bundle::<_,2>(1000);
 
-    let (heartbeat_tx,heartbeat_rx) = channel_builder.build();
-    let (generator_tx,generator_rx) = channel_builder.with_capacity(640).build();
+    let (heartbeat_tx,heartbeat_rx) = channel_builder
+        .with_labels(&["heartbeat"],true)
+        .build();
+    let (generator_tx,generator_rx) = channel_builder
+        .with_labels(&["generator"],true)
+        .with_capacity(640).build();
     let (worker_tx,worker_rx) = channel_builder.build();
 
     let actor_builder = graph.actor_builder().with_mcpu_avg();
 
     let aeron_channel = AeronConfig::new()
         .with_media_type(MediaType::Ipc)
-        .use_ipc()
+        //.use_ipc()
+        .with_media_type(MediaType::Udp)
+        .with_term_length((1024 * 1024 * 4) as usize)
+        .use_point_to_point(Endpoint {
+            ip: "127.0.0.1".parse().expect("Invalid IP address"),
+            port: 40456,
+        })
         .build();
 
     input_tx.build_aqueduct(AqueTech::Aeron(aeron_channel,40)

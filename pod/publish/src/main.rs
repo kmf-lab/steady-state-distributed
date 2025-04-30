@@ -28,7 +28,10 @@ fn main() {
         .with_avg_rate()
         .with_filled_percentile(Percentile::p80());//is 128 need max of 100!!
 
-    let (output_tx,output_rx) = channel_builder.build_stream_bundle::<StreamSimpleMessage,2>(1000);
+    let (output_tx,output_rx) = channel_builder
+        .with_capacity(6400)
+        .with_labels(&["output"],true) //TODO: problem this is abundle!!
+        .build_stream_bundle::<StreamSimpleMessage,2>(1000);
 
     let (heartbeat_tx,heartbeat_rx) = channel_builder.build_channel();
     let (generator_tx,generator_rx) = channel_builder.build_channel();
@@ -53,7 +56,15 @@ fn main() {
 
     let aeron_channel = AeronConfig::new()
         .with_media_type(MediaType::Ipc)
-        .use_ipc()
+       // .use_ipc()
+
+        .with_media_type(MediaType::Udp)
+        .with_term_length((1024 * 1024 * 4) as usize)
+        .use_point_to_point(Endpoint {
+            ip: "127.0.0.1".parse().expect("Invalid IP address"),
+            port: 40456,
+        })
+        
         .build();
 
     output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel,40)
