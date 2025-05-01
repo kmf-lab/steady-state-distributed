@@ -20,7 +20,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
 
-    while cmd.is_running(|| input[0].is_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
+    while cmd.is_running(|| rx_heartbeat.is_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
         await_for_any!(
            wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,1)),
            wait_for_all!(cmd.wait_avail(&mut rx_generator,1),cmd.wait_vacant(&mut tx_generator,1))

@@ -20,7 +20,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut tx_generator = output.remove(1);//start at the end.
     let mut tx_heartbeat = output.remove(0);
 
-    while cmd.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed_and_empty() && output.mark_closed()) {
+    while cmd.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed() && output.mark_closed()) {
 
         await_for_any!(
             wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,(1,8))),

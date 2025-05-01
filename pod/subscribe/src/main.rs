@@ -27,6 +27,7 @@ fn main() {
         .with_filled_percentile(Percentile::p80());
 
     let (input_tx,input_rx) = channel_builder
+        .with_avg_rate()
         .with_capacity(6400)
         .build_stream_bundle::<_,2>(1000);
 
