@@ -34,26 +34,30 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                                , generator: SteadyRx<u64>
                                                , logger: SteadyTx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
 
-    let mut heartbeat = heartbeat.lock().await;
-    let mut generator = generator.lock().await;
-    let mut logger = logger.lock().await;
+    let mut heartbeat_rx = heartbeat.lock().await;
+    let mut generator_rx = generator.lock().await;
+    let mut logger_tx = logger.lock().await;
 
-    while cmd.is_running(|| heartbeat.is_closed() && generator.is_closed() && logger.mark_closed()) {
+    while cmd.is_running(|| heartbeat_rx.is_closed() && generator_rx.is_closed() && logger_tx.mark_closed()) {
         let mut items_per_tick = 10;
-        let _clean =  await_for_all!(cmd.wait_vacant(&mut logger, 1),
-                                     cmd.wait_avail(&mut heartbeat, 1),
-                                     cmd.wait_avail(&mut generator, items_per_tick)
+        let _clean =  await_for_all!(cmd.wait_vacant(&mut logger_tx, 1),
+                                     cmd.wait_avail(&mut heartbeat_rx, 1),
+                                     cmd.wait_avail(&mut generator_rx, items_per_tick)
                                   );
 
-        if let Some(h) = cmd.try_take(&mut heartbeat) {
+        if let Some(h) = cmd.try_take(&mut heartbeat_rx) {
             //for each beat we empty the generated data
-            for item in cmd.take_into_iter(&mut generator) {
+            for item in cmd.take_into_iter(&mut generator_rx) {
                 //note: SendSaturation tells the async call to just wait if the outgoing channel
                 //      is full. Another popular choice is Warn so it logs if it gets filled.
-                cmd.send_async(&mut logger, FizzBuzzMessage::new(item)
-                                          , SendSaturation::IgnoreAndWait).await;
+                let result = cmd.send_async(&mut logger_tx, FizzBuzzMessage::new(item)
+                               , SendSaturation::AwaitForRoom).await;
+                if let SendOutcome::Blocked(d) = result {
+                    //note: we already consumed d so it is lost but we know we are shutting down now.
+                    break;
+                }
                 items_per_tick-=1;
-                if 0==items_per_tick || cmd.is_liveliness_stop_requested() { //hack test.
+                if 0==items_per_tick { //hack test.
                     break;
                 }
             }

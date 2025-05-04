@@ -19,7 +19,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                                , heartbeat_tx: SteadyTx<u64>
                                                , state: SteadyState<HeartbeatState> ) -> Result<(),Box<dyn Error>> {
     let args = cmd.args::<crate::MainArg>().expect("unable to downcast");
-    let rate = Duration::from_millis(args.rate_ms);
+    let rate = Duration::from_micros(args.rate_ms);
     let beats = args.beats;
  //   drop(args); //could be done this way
     let mut state = state.lock(|| HeartbeatState{ count: 0}).await;
@@ -33,7 +33,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         let _ = cmd.try_send(&mut heartbeat_tx, state.count);
         state.count += 1;
         if beats == state.count {
-            cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::IgnoreAndWait).await;
+            cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await;
             info!("request graph stop");
             cmd.request_graph_stop();
         }

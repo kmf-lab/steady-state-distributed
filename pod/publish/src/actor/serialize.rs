@@ -19,8 +19,9 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     //pull out of vec of guards so we can give them great names
     let mut tx_generator = output.remove(1);//start at the end.
     let mut tx_heartbeat = output.remove(0);
+    drop(output); //safety to ensure we do not use this again
 
-    while cmd.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed() && output.mark_closed()) {
+    while cmd.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
 
         await_for_any!(
             wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,(1,8))),
