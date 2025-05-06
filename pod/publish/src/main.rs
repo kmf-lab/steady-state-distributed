@@ -67,6 +67,14 @@ fn main() {
         
         .build();
 
+    // let aeron_config = AeronConfig::new()
+    //     .with_media_type(MediaType::Udp)
+    //     .use_multicast(Endpoint {
+    //         ip: "224.0.1.1".parse().expect("Invalid IP"),
+    //         port: 40456,
+    //     }, "eth0") // Specify network interface
+    //     .build();
+
     output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel,40)
                              ,&mut actor_builder.with_name("publish")
                              ,&mut Threading::Spawn
@@ -75,7 +83,7 @@ fn main() {
     //startup entire graph
     graph.start();
     // your graph is running here until actor calls graph stop
-    graph.block_until_stopped(std::time::Duration::from_secs(1));
+    graph.block_until_stopped(std::time::Duration::from_secs(600));
 }
 
 
