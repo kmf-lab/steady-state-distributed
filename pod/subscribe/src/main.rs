@@ -76,7 +76,7 @@ fn main() {
     //startup entire graph
     graph.start();
     // your graph is running here until actor calls graph stop
-    graph.block_until_stopped(std::time::Duration::from_secs(1));
+    graph.block_until_stopped(std::time::Duration::from_secs(60));
 }
 
 

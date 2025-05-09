@@ -14,16 +14,25 @@ pub async fn run(context: SteadyContext, generated_tx: SteadyTx<u64>, state: Ste
 }
 
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u64>, state: SteadyState<GeneratorState> ) -> Result<(),Box<dyn Error>> {
-
+    let args = cmd.args::<crate::MainArg>().expect("unable to downcast");
+    let beats = args.beats;
+    
     let mut state = state.lock(|| GeneratorState {value: 0}).await;
     let mut generated = generated.lock().await;
 
-    while cmd.is_running(|| generated.mark_closed()) {
+    const EXPECTED_UNITS_PER_BEAT:u64 = 3; //MUST MATCH THE CLIENT EXPECTATIONS
+    while cmd.is_running(|| state.value >= beats*EXPECTED_UNITS_PER_BEAT && generated.mark_closed() ) {
          //this will await until we have room for this one.
          if cmd.send_async(&mut generated, state.value, SendSaturation::AwaitForRoom).await.is_sent() {
              state.value += 1;
+             if beats*EXPECTED_UNITS_PER_BEAT == state.value {
+                 assert!(cmd.send_async(&mut generated, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
+                 info!("request graph stop");
+                 cmd.request_graph_stop();
+             }
          }
     }
+    error!("exited Ok");
     Ok(())
 }
 
