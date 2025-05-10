@@ -38,6 +38,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         //     cmd.request_graph_stop();
         // }
     }
+    error!("exited Ok");
     Ok(())
 }
 

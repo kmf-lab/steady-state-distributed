@@ -8,6 +8,7 @@ pub(crate) async fn run(context: SteadyContext
     internal_behavior(cmd, input, heartbeat, generator).await
 }
 
+
 async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                            , input: SteadyStreamRxBundle<StreamSessionMessage,2>
                            , heartbeat: SteadyTx<u64>
@@ -19,6 +20,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
     drop(input);
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
+    let mut shutdown_count = 0; //TODO: move to steady?
 
     while cmd.is_running(|| rx_heartbeat.is_empty() && rx_generator.is_empty()
                         && tx_generator.mark_closed()
@@ -34,8 +36,14 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                 // Ensure bytes.1 has exactly 8 bytes and convert to [u8; 8]
                 let byte_array: [u8; 8] = bytes.1.as_ref().try_into().expect("Expected exactly 8 bytes");
                 let beat = u64::from_be_bytes(byte_array);
+                ///TODO: the publish shutdown singlal must wait for oen more mcall to get final toal image
+                /// TODO: check other shutdown wait logic. very neartly right.
                 if u64::MAX == beat {
-                    cmd.request_graph_stop();
+                    shutdown_count += 1;
+                    error!("max beat found. shutdown count {}", shutdown_count);
+                    if 2==shutdown_count {
+                        cmd.request_graph_stop();
+                    }         
                 } else {
                     let _ = cmd.try_send(&mut tx_heartbeat, beat).is_sent();
                 }
@@ -44,13 +52,21 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
 
         if cmd.vacant_units(&mut tx_generator)>0  {
             if let Some(bytes) = cmd.try_take(&mut rx_generator) {
+                         
                 // Ensure bytes.1 has exactly 8 bytes and convert to [u8; 8]
                 let byte_array: [u8; 8] = bytes.1.as_ref().try_into().expect("Expected exactly 8 bytes");
-                cmd.try_send(&mut tx_generator, u64::from_be_bytes(byte_array)).is_sent();
+                let generated = u64::from_be_bytes(byte_array);
+                if u64::MAX == generated {
+                    shutdown_count += 1;                
+                    error!("max generated found.  shutdown count {}", shutdown_count);
+                    if 2==shutdown_count {
+                        cmd.request_graph_stop();
+                    }
+                } else {
+                    cmd.try_send(&mut tx_generator, generated).is_sent();
+                }
             }
         }
-
-
     }
     Ok(())
 }

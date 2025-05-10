@@ -35,13 +35,16 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
             };
         }
 
-        if cmd.vacant_units(&mut tx_generator)>0 {
+        while cmd.vacant_units(&mut tx_generator)>0 {
             if let Some(value) = cmd.try_take(&mut rx_generator) {
                 let bytes = value.to_be_bytes();
                 assert!(cmd.try_send(&mut tx_generator, &bytes).is_sent());
-            };
+            } else { 
+                break;
+            }
         }
 
     }
+    error!("exited Ok");
     Ok(())
 }
