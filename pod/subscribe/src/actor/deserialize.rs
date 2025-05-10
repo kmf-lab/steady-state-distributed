@@ -16,15 +16,18 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
     //pull out of vec of guards so we can give them great names
     let mut rx_generator = input.remove(1);//start at the end.
     let mut rx_heartbeat = input.remove(0);
-
+    drop(input);
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
 
-    while cmd.is_running(|| rx_heartbeat.is_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
-        await_for_any!(
-           wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,1)),
-           wait_for_all!(cmd.wait_avail(&mut rx_generator,1),cmd.wait_vacant(&mut tx_generator,1))
-        );
+    while cmd.is_running(|| rx_heartbeat.is_empty() && rx_generator.is_empty()
+                        && tx_generator.mark_closed()
+                        && tx_heartbeat.mark_closed()) {
+         await_for_any!(
+            //periodic!(Duration::from_secs(1)),
+            wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,1)),
+            wait_for_all!(cmd.wait_avail(&mut rx_generator,1),cmd.wait_vacant(&mut tx_generator,1))
+         );
 
         if cmd.vacant_units(&mut tx_heartbeat)>0 {
             if let Some(bytes) = cmd.try_take(&mut rx_heartbeat) {
@@ -39,7 +42,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
             }
         }
 
-        while cmd.vacant_units(&mut tx_generator)>0 && cmd.avail_units(&mut rx_generator)>0 {
+        if cmd.vacant_units(&mut tx_generator)>0  {
             if let Some(bytes) = cmd.try_take(&mut rx_generator) {
                 // Ensure bytes.1 has exactly 8 bytes and convert to [u8; 8]
                 let byte_array: [u8; 8] = bytes.1.as_ref().try_into().expect("Expected exactly 8 bytes");

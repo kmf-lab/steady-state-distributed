@@ -42,7 +42,7 @@ fn main() {
     let actor_builder = graph.actor_builder().with_mcpu_avg();
 
     let aeron_channel = AeronConfig::new()
-        .with_media_type(MediaType::Ipc)
+        //.with_media_type(MediaType::Ipc)
         //.use_ipc()
         .with_media_type(MediaType::Udp)
         .with_term_length((1024 * 1024 * 4) as usize)

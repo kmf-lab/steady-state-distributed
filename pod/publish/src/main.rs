@@ -55,7 +55,7 @@ fn main() {
                , &mut Threading::Spawn);
 
     let aeron_channel = AeronConfig::new()
-        .with_media_type(MediaType::Ipc)
+        //.with_media_type(MediaType::Ipc)
        // .use_ipc()
 
         .with_media_type(MediaType::Udp)
