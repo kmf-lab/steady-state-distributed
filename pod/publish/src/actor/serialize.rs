@@ -45,6 +45,8 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         }
 
     }
+    cmd.relay_stats(); //TODO: this should not be requried???  TODO: publish bundle should be waiting for the consumers???
+
     error!("exited Ok");
     Ok(())
 }
@@ -63,12 +65,12 @@ pub(crate) mod serialize_tests {
         let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
         let (generator_tx, generator_rx) = graph.channel_builder().build();
         let (stream_tx, stream_rx) = graph.channel_builder().build_stream_bundle::< _, 2>(8);
-     
+
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn(move |context|
                 internal_behavior(context, heartbeat_rx.clone(), generator_rx.clone(), stream_tx.clone())
-            );           
+            );
 
         graph.start(); //startup the graph
         sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3

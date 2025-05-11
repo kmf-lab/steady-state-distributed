@@ -25,19 +25,20 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut state = state.lock(|| HeartbeatState{ count: 0}).await;
     let mut heartbeat_tx = heartbeat_tx.lock().await;
     //loop is_running until shutdown signal then we call the closure which closes our outgoing Tx
-    while cmd.is_running(|| heartbeat_tx.mark_closed()) {
+    while cmd.is_running(|| state.count >= beats && heartbeat_tx.mark_closed()) {
         //await here until both of these are true
         await_for_all!(cmd.wait_periodic(rate),
                        cmd.wait_vacant(&mut heartbeat_tx, 1));
 
         let _ = cmd.try_send(&mut heartbeat_tx, state.count);
         state.count += 1;
-        // if beats == state.count {
-        //     assert!(cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
-        //     info!("request graph stop");
-        //     cmd.request_graph_stop();
-        // }
+        if beats == state.count {
+            assert!(cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
+            info!("request graph stop");
+            cmd.request_graph_stop();
+        }
     }
+    cmd.relay_stats(); //TODO: this should not be requried???
     error!("exited Ok");
     Ok(())
 }

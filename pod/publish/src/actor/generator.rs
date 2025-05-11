@@ -32,6 +32,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
              }
          }
     }
+    cmd.relay_stats(); //TODO: this should not be requried???
     error!("exited Ok");
     Ok(())
 }
