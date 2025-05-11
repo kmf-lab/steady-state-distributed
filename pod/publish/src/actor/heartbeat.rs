@@ -44,7 +44,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 /// Here we test the internal behavior of this actor
 #[cfg(test)]
-pub(crate) mod tests {
+pub(crate) mod heartbeat_tests {
     pub use std::thread::sleep;
     use steady_state::*;
     use crate::arg::MainArg;

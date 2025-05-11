@@ -6,4 +6,6 @@ pub(crate) struct MainArg {
     pub(crate) rate_ms: u64,
     #[arg(short = 'b', long = "beats", default_value = "60000")]
     pub(crate) beats: u64,
+    
+    // TODO: port ip and IPC switch.
 }

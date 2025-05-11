@@ -79,10 +79,21 @@ fn main() {
     graph.block_until_stopped(std::time::Duration::from_secs(60));
 }
 
+// TODO: need a unit test.
 
 
+#[cfg(test)]
+pub(crate) mod main_tests {
+    use std::thread::sleep;
+    use steady_state::*;
+    use super::*;
 
-//tests
+    #[test]
+    fn graph_test() {
+        
+    }
+
+}
 
 
 //standard needs single message passing

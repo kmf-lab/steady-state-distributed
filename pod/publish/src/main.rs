@@ -87,10 +87,19 @@ fn main() {
     error!("should see 10 min since shutdown requested");
 }
 
+#[cfg(test)]
+pub(crate) mod main_tests {
+    use std::thread::sleep;
+    use steady_state::*;
+    use super::*;
 
+    #[test]
+    fn graph_test() {
 
+    }
+    
+}
 
-//tests
 
 
 //standard needs single message passing

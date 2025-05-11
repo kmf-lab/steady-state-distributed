@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::thread::sleep;
 use steady_state::*;
 pub(crate) async fn run(context: SteadyContext
                   , input: SteadyStreamRxBundle<StreamSessionMessage,2>
@@ -69,4 +70,33 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+pub(crate) mod deserialize_tests {
+    pub use std::thread::sleep;
+    use steady_state::*;
+    use crate::arg::MainArg;
+    use super::*;
+
+    #[test]
+    fn test_deserialize() {
+        let mut graph = GraphBuilder::for_testing().build(());
+        //default capacity is 64 unless specified
+        let (stream_tx, stream_rx) = graph.channel_builder().build_stream_bundle::<_, 2>(8);
+        let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
+        let (generator_tx, generator_rx) = graph.channel_builder().build();
+
+        graph.actor_builder()
+            .with_name("UnitTest")
+            .build_spawn(move |context|
+                internal_behavior(context, stream_rx.clone(), heartbeat_tx.clone(), generator_tx.clone())
+            );
+
+        graph.start(); //startup the graph
+        sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
+        graph.request_stop(); //our actor has no input so it immediately stops upon this request
+        graph.block_until_stopped(Duration::from_secs(1));
+        // assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
+    }
 }
