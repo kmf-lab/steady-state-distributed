@@ -21,7 +21,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
     let mut generated = generated.lock().await;
 
     const EXPECTED_UNITS_PER_BEAT:u64 = 3; //MUST MATCH THE CLIENT EXPECTATIONS
-    while cmd.is_running(|| state.value >= beats*EXPECTED_UNITS_PER_BEAT && generated.mark_closed() ) {
+    while cmd.is_running(|| /*state.value >= beats*EXPECTED_UNITS_PER_BEAT &&*/ generated.mark_closed() ) {
          //this will await until we have room for this one.
          if cmd.send_async(&mut generated, state.value, SendSaturation::AwaitForRoom).await.is_sent() {
              state.value += 1;
@@ -32,7 +32,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
              }
          }
     }
-    cmd.relay_stats(); //TODO: this should not be requried???
     error!("exited Ok");
     Ok(())
 }

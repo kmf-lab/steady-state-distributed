@@ -45,7 +45,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         }
 
     }
-    cmd.relay_stats(); //TODO: this should not be requried???  TODO: publish bundle should be waiting for the consumers???
 
     error!("exited Ok");
     Ok(())
