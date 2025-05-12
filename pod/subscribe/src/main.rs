@@ -66,7 +66,7 @@ fn main() {
     actor_builder.with_name("worker")
         .build( move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) }
                , &mut Threading::Join(&mut team));
-
+//TODO: review this join code as teh possible issue.
     actor_builder.with_name("logger")
         .build( move |context| { actor::logger::run(context, worker_rx.clone()) }
                , &mut Threading::Join(&mut team));
