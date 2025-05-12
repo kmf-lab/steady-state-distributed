@@ -19,6 +19,7 @@ fn main() {
     let cli_args = MainArg::parse();
     let _ = init_logging(LogLevel::Info);
     let mut graph = GraphBuilder::default()
+           .with_shutdown_barrier(2)
            .build(cli_args); //or pass () if no args
 
     let channel_builder = graph.channel_builder()

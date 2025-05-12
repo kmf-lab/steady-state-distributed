@@ -35,7 +35,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         if beats == state.count {
             assert!(cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
             info!("request graph stop");
-            cmd.request_graph_stop();
+            cmd.request_graph_stop().await;
         }
     }
     cmd.relay_stats(); //TODO: this should not be requried???

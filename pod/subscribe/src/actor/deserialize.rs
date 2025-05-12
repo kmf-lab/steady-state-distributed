@@ -43,7 +43,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                     shutdown_count += 1;
                     error!("max beat found. shutdown count {}", shutdown_count);
                     if 2==shutdown_count {
-                        cmd.request_graph_stop();
+                        cmd.request_graph_stop().await;
                     }         
                 } else {
                     let _ = cmd.try_send(&mut tx_heartbeat, beat).is_sent();
@@ -61,7 +61,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                     shutdown_count += 1;                
                     error!("max generated found.  shutdown count {}", shutdown_count);
                     if 2==shutdown_count {
-                        cmd.request_graph_stop();
+                        cmd.request_graph_stop().await;
                     }
                 } else {
                     cmd.try_send(&mut tx_generator, generated).is_sent();

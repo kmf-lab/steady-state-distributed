@@ -28,7 +28,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
              if beats*EXPECTED_UNITS_PER_BEAT == state.value {
                  assert!(cmd.send_async(&mut generated, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
                  info!("request graph stop");
-                 cmd.request_graph_stop();
+                 cmd.request_graph_stop().await;
              }
          }
     }
