@@ -43,10 +43,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                 break;
             }
         }
-
     }
-
-    error!("exited Ok");
     Ok(())
 }
 

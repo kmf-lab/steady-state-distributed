@@ -61,22 +61,28 @@ fn main() {
 
     actor_builder.with_name("deserialize")
         .build( move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone()) }
-                , &mut Threading::Join(&mut team));
+                , &mut Threading::Spawn);
+               
+               // &mut Threading::Join(&mut team));
 
     actor_builder.with_name("worker")
         .build( move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) }
-               , &mut Threading::Join(&mut team));
+                , &mut Threading::Spawn);
+
+//               , &mut Threading::Join(&mut team));
 //TODO: review this join code as teh possible issue.
     actor_builder.with_name("logger")
         .build( move |context| { actor::logger::run(context, worker_rx.clone()) }
-               , &mut Threading::Join(&mut team));
+                , &mut Threading::Spawn);
+
+//    , &mut Threading::Join(&mut team));
 
     team.spawn();
 
     //startup entire graph
     graph.start();
     // your graph is running here until actor calls graph stop
-    graph.block_until_stopped(std::time::Duration::from_secs(60));
+    graph.block_until_stopped(std::time::Duration::from_secs(20));
 }
 
 // TODO: need a unit test.

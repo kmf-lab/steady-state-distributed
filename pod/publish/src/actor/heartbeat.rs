@@ -38,8 +38,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
             cmd.request_graph_stop().await; //TODO: rename to request_shutdown
         }
     }
-
-    error!("exited Ok");
     Ok(())
 }
 

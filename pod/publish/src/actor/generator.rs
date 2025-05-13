@@ -32,7 +32,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
              }
          }
     }
-    error!("exited Ok");
     Ok(())
 }
 
