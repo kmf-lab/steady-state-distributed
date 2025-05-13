@@ -62,6 +62,9 @@ pub(crate) mod serialize_tests {
         let (generator_tx, generator_rx) = graph.channel_builder().build();
         let (stream_tx, stream_rx) = graph.channel_builder().build_stream_bundle::< _, 2>(8);
 
+
+        //TODO: add some data records
+
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn(move |context|
@@ -72,6 +75,8 @@ pub(crate) mod serialize_tests {
         sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1));
+
+        //TODO: validate the serilized version
      //   assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
     }
 }

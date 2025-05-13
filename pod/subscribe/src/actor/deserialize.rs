@@ -37,8 +37,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                 // Ensure bytes.1 has exactly 8 bytes and convert to [u8; 8]
                 let byte_array: [u8; 8] = bytes.1.as_ref().try_into().expect("Expected exactly 8 bytes");
                 let beat = u64::from_be_bytes(byte_array);
-                ///TODO: the publish shutdown singlal must wait for oen more mcall to get final toal image
-                /// TODO: check other shutdown wait logic. very neartly right.
+
                 if u64::MAX == beat {
                     shutdown_count += 1;
                     error!("max beat found. shutdown count {}", shutdown_count);
@@ -87,6 +86,8 @@ pub(crate) mod deserialize_tests {
         let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
         let (generator_tx, generator_rx) = graph.channel_builder().build();
 
+        //TODO: write some serilized data
+
         graph.actor_builder()
             .with_name("UnitTest")
             .build_spawn(move |context|
@@ -97,6 +98,9 @@ pub(crate) mod deserialize_tests {
         sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
         graph.request_stop(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1));
+
+
+        //TODO: assert we deserilized it
         // assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
     }
 }

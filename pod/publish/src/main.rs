@@ -22,42 +22,52 @@ fn main() {
            .with_shutdown_barrier(2)
            .build(cli_args); //or pass () if no args
 
+    build_graph(&mut graph);
+
+    //startup entire graph
+    graph.start();
+    // your graph is running here until actor calls graph stop
+    graph.block_until_stopped(std::time::Duration::from_secs(600));
+    error!("should see 10 min since shutdown requested");
+}
+
+fn build_graph(graph: &mut Graph) {
     let channel_builder = graph.channel_builder()
-        .with_filled_trigger(Trigger::AvgAbove(Filled::p90()),AlertColor::Red)
-        .with_filled_trigger(Trigger::AvgAbove(Filled::p60()),AlertColor::Orange)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
         .with_avg_rate()
-        .with_filled_percentile(Percentile::p80());//is 128 need max of 100!!
+        .with_filled_percentile(Percentile::p80()); //is 128 need max of 100!!
 
-    let (output_tx,output_rx) = channel_builder
+    let (output_tx, output_rx) = channel_builder
         .with_capacity(6400)
-        .with_labels(&["output"],true) //TODO: problem this is abundle!!
-        .build_stream_bundle::<StreamSimpleMessage,2>(1000);
+        .with_labels(&["output"], true) //TODO: problem this is abundle!!
+        .build_stream_bundle::<StreamSimpleMessage, 2>(1000);
 
-    let (heartbeat_tx,heartbeat_rx) = channel_builder.build_channel();
-    let (generator_tx,generator_rx) = channel_builder.build_channel();
+    let (heartbeat_tx, heartbeat_rx) = channel_builder.build_channel();
+    let (generator_tx, generator_rx) = channel_builder.build_channel();
 
     let actor_builder = graph.actor_builder()
-                                .with_load_avg()
-                                .with_mcpu_avg();
+        .with_load_avg()
+        .with_mcpu_avg();
 
     let state = new_state();
     actor_builder.with_name("heartbeat")
-         .build( move |context| { actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone()) }
+        .build(move |context| { actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone()) }
                , &mut Threading::Spawn);
 
     let state = new_state();
     actor_builder.with_name("generator")
-        .build( move |context| { actor::generator::run(context, generator_tx.clone(), state.clone()) }
+        .build(move |context| { actor::generator::run(context, generator_tx.clone(), state.clone()) }
                , &mut Threading::Spawn);
 
     actor_builder.with_name("serialize")
-        .build( move |context| { actor::serialize::run(context, heartbeat_rx.clone(), generator_rx.clone(), output_tx.clone()) }
+        .build(move |context| { actor::serialize::run(context, heartbeat_rx.clone(), generator_rx.clone(), output_tx.clone()) }
                , &mut Threading::Spawn);
 
     let aeron_channel = AeronConfig::new()
         //.with_media_type(MediaType::Ipc)
-       // .use_ipc()
+        // .use_ipc()
 
         .with_media_type(MediaType::Udp)
         .with_term_length((1024 * 1024 * 4) as usize)
@@ -65,7 +75,7 @@ fn main() {
             ip: "127.0.0.1".parse().expect("Invalid IP address"),
             port: 40456,
         })
-        
+
         .build();
 
     // let aeron_config = AeronConfig::new()
@@ -76,16 +86,10 @@ fn main() {
     //     }, "eth0") // Specify network interface
     //     .build();
 
-    output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel,40)
-                             ,&mut actor_builder.with_name("publish")
-                             ,&mut Threading::Spawn
-                             );
-
-    //startup entire graph
-    graph.start();
-    // your graph is running here until actor calls graph stop
-    graph.block_until_stopped(std::time::Duration::from_secs(600));
-    error!("should see 10 min since shutdown requested");
+    output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel, 40)
+                             , &mut actor_builder.with_name("publish")
+                             , &mut Threading::Spawn
+    );
 }
 
 #[cfg(test)]
@@ -96,6 +100,18 @@ pub(crate) mod main_tests {
 
     #[test]
     fn graph_test() {
+
+        let gb = GraphBuilder::for_testing();
+
+        let mut g = gb.build(MainArg {
+            rate_ms: 100,
+            beats: 10,
+        });
+
+        build_graph(&mut g);
+
+        g.start();
+
 
     }
     

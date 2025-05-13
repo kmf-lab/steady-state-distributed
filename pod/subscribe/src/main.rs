@@ -21,23 +21,33 @@ fn main() {
     let mut graph = GraphBuilder::default()
            .build(cli_args); //or pass () if no args
 
+
+    build_graph(&mut graph);
+
+    //startup entire graph
+    graph.start();
+    // your graph is running here until actor calls graph stop
+    graph.block_until_stopped(std::time::Duration::from_secs(20));
+}
+
+fn build_graph(graph: &mut Graph) {
     let channel_builder = graph.channel_builder()
-        .with_filled_trigger(Trigger::PercentileAbove(Percentile::p80(),Filled::p50()),AlertColor::Orange)
+        .with_filled_trigger(Trigger::PercentileAbove(Percentile::p80(), Filled::p50()), AlertColor::Orange)
         .with_avg_filled()
         .with_filled_percentile(Percentile::p80());
 
-    let (input_tx,input_rx) = channel_builder
+    let (input_tx, input_rx) = channel_builder
         .with_avg_rate()
         .with_capacity(6400)
-        .build_stream_bundle::<_,2>(1000);
+        .build_stream_bundle::<_, 2>(1000);
 
-    let (heartbeat_tx,heartbeat_rx) = channel_builder
-        .with_labels(&["heartbeat"],true)
+    let (heartbeat_tx, heartbeat_rx) = channel_builder
+        .with_labels(&["heartbeat"], true)
         .build();
-    let (generator_tx,generator_rx) = channel_builder
-        .with_labels(&["generator"],true)
+    let (generator_tx, generator_rx) = channel_builder
+        .with_labels(&["generator"], true)
         .with_capacity(640).build();
-    let (worker_tx,worker_rx) = channel_builder.build();
+    let (worker_tx, worker_rx) = channel_builder.build();
 
     let actor_builder = graph.actor_builder().with_mcpu_avg();
 
@@ -52,39 +62,33 @@ fn main() {
         })
         .build();
 
-    input_tx.build_aqueduct(AqueTech::Aeron(aeron_channel,40)
-                             ,&mut actor_builder.with_name("aeron")
-                             ,&mut Threading::Spawn
+    input_tx.build_aqueduct(AqueTech::Aeron(aeron_channel, 40)
+                            , &mut actor_builder.with_name("aeron")
+                            , &mut Threading::Spawn
     );
 
     let mut team = ActorTeam::new(&graph);
 
     actor_builder.with_name("deserialize")
-        .build( move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone()) }
-                , &mut Threading::Spawn);
-               
-               // &mut Threading::Join(&mut team));
+        .build(move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone()) }
+               , &mut Threading::Spawn);
+
+    // &mut Threading::Join(&mut team));
 
     actor_builder.with_name("worker")
-        .build( move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) }
-                , &mut Threading::Spawn);
+        .build(move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) }
+               , &mut Threading::Spawn);
 
-//               , &mut Threading::Join(&mut team));
-//TODO: review this join code as teh possible issue.
+    //               , &mut Threading::Join(&mut team));
+    //TODO: review this join code as teh possible issue.
     actor_builder.with_name("logger")
-        .build( move |context| { actor::logger::run(context, worker_rx.clone()) }
-                , &mut Threading::Spawn);
+        .build(move |context| { actor::logger::run(context, worker_rx.clone()) }
+               , &mut Threading::Spawn);
 
-//    , &mut Threading::Join(&mut team));
+    //    , &mut Threading::Join(&mut team));
 
     team.spawn();
-
-    //startup entire graph
-    graph.start();
-    // your graph is running here until actor calls graph stop
-    graph.block_until_stopped(std::time::Duration::from_secs(20));
 }
-
 // TODO: need a unit test.
 
 
@@ -96,6 +100,14 @@ pub(crate) mod main_tests {
 
     #[test]
     fn graph_test() {
+
+        let gb = GraphBuilder::for_testing();
+
+        let mut g = gb.build(MainArg { });
+
+        build_graph(&mut g);
+
+        g.start();
         
     }
 

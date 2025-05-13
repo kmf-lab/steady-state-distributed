@@ -52,9 +52,7 @@ pub(crate) mod logger_tests {
         graph.request_stop();
         graph.block_until_stopped(Duration::from_secs(1));
 
-        //TODO: could serilize to broadcast to n pods??
 
-
-        //assert_in_logs!(vec!["Msg Fizz"]);
+        assert_in_logs!(vec!["Msg Fizz"]);
     }
 }
