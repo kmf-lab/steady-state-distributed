@@ -39,7 +39,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut logger_tx = logger.lock().await;
 
     while cmd.is_running(|| { 
-                         warn!("shutdown requested {} {}",heartbeat_rx.is_closed(), generator_rx.is_closed());
+                         //trace!("shutdown requested {} {}",heartbeat_rx.is_closed(), generator_rx.is_closed());
                          heartbeat_rx.is_closed() && generator_rx.is_closed() && logger_tx.mark_closed()}) {
         let mut count_down_items_per_tick = 3; //if too big we might hang
         let _clean =  await_for_all!(cmd.wait_vacant(&mut logger_tx, 1),

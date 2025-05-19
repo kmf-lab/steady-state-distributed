@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::thread::sleep;
 use steady_state::*;
 pub(crate) async fn run(context: SteadyContext
                   , input: SteadyStreamRxBundle<StreamSessionMessage,2>
@@ -40,7 +39,6 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
 
                 if u64::MAX == beat {
                     shutdown_count += 1;
-                    error!("max beat found. shutdown count {}", shutdown_count);
                     if 2==shutdown_count {
                         cmd.request_graph_stop().await;
                     }         
@@ -58,7 +56,6 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                 let generated = u64::from_be_bytes(byte_array);
                 if u64::MAX == generated {
                     shutdown_count += 1;                
-                    error!("max generated found.  shutdown count {}", shutdown_count);
                     if 2==shutdown_count {
                         cmd.request_graph_stop().await;
                     }

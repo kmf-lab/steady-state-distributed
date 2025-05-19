@@ -1,5 +1,4 @@
-use std::sync::{Arc, Mutex};
-use std::thread::sleep;
+use std::sync::{Mutex};
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
