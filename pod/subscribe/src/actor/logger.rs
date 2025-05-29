@@ -7,7 +7,7 @@ pub async fn run(context: SteadyContext, fizz_buzz_rx: SteadyRx<FizzBuzzMessage>
     if cmd.use_internal_behavior {
         internal_behavior(cmd, fizz_buzz_rx).await
     } else {
-        cmd.simulated_behavior(vec!(&TestEquals(fizz_buzz_rx))).await
+        cmd.simulated_behavior(vec!(&fizz_buzz_rx)).await
     }
 }
 
@@ -32,11 +32,11 @@ pub(crate) mod logger_tests {
     use steady_state::*;
     use super::*;
     #[test]
-    fn test_logger() {
+    fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
         use steady_logger::*;
 
         initialize_with_level(LogLevel::Trace).expect("Failed to initialize test logger");
-        let _guard = start_capture();
+        let _guard = start_log_capture();
 
         let mut graph = GraphBuilder::for_testing().build(());
         let (fizz_buzz_tx, fizz_buzz_rx) = graph.channel_builder().build();
@@ -49,9 +49,9 @@ pub(crate) mod logger_tests {
         fizz_buzz_tx.testing_send_all(vec![FizzBuzzMessage::Fizz], true);
         sleep(Duration::from_millis(300));
         graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(1));
-
+        graph.block_until_stopped(Duration::from_secs(1))?;
 
         assert_in_logs!(vec!["Msg Fizz"]);
+        Ok(())
     }
 }

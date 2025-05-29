@@ -9,7 +9,7 @@ pub async fn run(context: SteadyContext, generated_tx: SteadyTx<u64>, state: Ste
     if cmd.use_internal_behavior {
         internal_behavior(cmd, generated_tx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&TestEcho(generated_tx))).await
+        cmd.simulated_behavior(vec!(&generated_tx)).await
     }
 }
 
@@ -40,11 +40,12 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
 pub(crate) mod generator_tests {
     use std::thread::sleep;
     use steady_state::*;
+    use crate::arg::MainArg;
     use super::*;
 
     #[test]
-    fn test_generator() {
-        let mut graph = GraphBuilder::for_testing().build(());
+    fn test_generator() -> Result<(),Box<dyn Error>> {
+        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
         let (generate_tx, generate_rx) = graph.channel_builder().build();
 
         let state = new_state();
@@ -56,8 +57,9 @@ pub(crate) mod generator_tests {
         sleep(Duration::from_millis(100));
         graph.request_stop();
 
-        graph.block_until_stopped(Duration::from_secs(1));
+        graph.block_until_stopped(Duration::from_secs(1))?;
 
         assert_steady_rx_eq_take!(generate_rx,vec!(0,1));
+        Ok(())
     }
 }

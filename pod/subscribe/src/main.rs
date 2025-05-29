@@ -10,7 +10,6 @@ pub(crate) mod actor {
 }
 
 fn main() {
-
     unsafe {
         env::set_var("TELEMETRY_SERVER_PORT", "5552");
         env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
@@ -19,41 +18,44 @@ fn main() {
     let cli_args = MainArg::parse();
     let _ = init_logging(LogLevel::Info);
     let mut graph = GraphBuilder::default()
-           .build(cli_args); //or pass () if no args
-
+        .with_shutdown_barrier(2)
+        .build(cli_args);
 
     build_graph(&mut graph);
 
-    //startup entire graph
     graph.start();
-    // your graph is running here until actor calls graph stop
-    graph.block_until_stopped(std::time::Duration::from_secs(20));
+    graph.block_until_stopped(std::time::Duration::from_secs(600));
+    error!("should see 10 min since shutdown requested");
 }
 
+/// Builds the graph for both normal operation and testing.
+/// The aqueduct is included unconditionally, but in testing mode, its behavior is assumed to be mocked or isolated.
 fn build_graph(graph: &mut Graph) {
     let channel_builder = graph.channel_builder()
-        .with_filled_trigger(Trigger::PercentileAbove(Percentile::p80(), Filled::p50()), AlertColor::Orange)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
+        .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
+        .with_avg_rate()
         .with_filled_percentile(Percentile::p80());
 
     let (input_tx, input_rx) = channel_builder
-        .with_avg_rate()
         .with_capacity(6400)
-        .build_stream_bundle::<_, 2>(1000);
+        .with_labels(&["input"], true)
+        .build_stream_bundle::<StreamSessionMessage, 2>(1000);
 
     let (heartbeat_tx, heartbeat_rx) = channel_builder
         .with_labels(&["heartbeat"], true)
-        .build();
+        .build_channel();
     let (generator_tx, generator_rx) = channel_builder
         .with_labels(&["generator"], true)
-        .with_capacity(640).build();
-    let (worker_tx, worker_rx) = channel_builder.build();
+        .build_channel();
+    let (worker_tx, worker_rx) = channel_builder.build_channel();
 
-    let actor_builder = graph.actor_builder().with_mcpu_avg();
+    let actor_builder = graph.actor_builder()
+        .with_load_avg()
+        .with_mcpu_avg();
 
     let aeron_channel = AeronConfig::new()
-        //.with_media_type(MediaType::Ipc)
-        //.use_ipc()
         .with_media_type(MediaType::Udp)
         .with_term_length((1024 * 1024 * 4) as usize)
         .use_point_to_point(Endpoint {
@@ -62,78 +64,67 @@ fn build_graph(graph: &mut Graph) {
         })
         .build();
 
-    input_tx.build_aqueduct(AqueTech::Aeron(aeron_channel, 40)
-                            , &mut actor_builder.with_name("aeron")
-                            , &mut Threading::Spawn
+    input_tx.build_aqueduct(
+        AqueTech::Aeron(aeron_channel, 40),
+        &mut actor_builder.with_name("aeron"),
+        &mut Threading::Spawn
     );
 
-    let mut team = ActorTeam::new(&graph);
-
+    let steady = new_state();
     actor_builder.with_name("deserialize")
-        .build(move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone()) }
-               , &mut Threading::Spawn);
-
-    // &mut Threading::Join(&mut team));
+        .build(
+            move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone(), steady.clone()) },
+            &mut Threading::Spawn
+        );
 
     actor_builder.with_name("worker")
-        .build(move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) }
-               , &mut Threading::Spawn);
+        .build(
+            move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) },
+            &mut Threading::Spawn
+        );
 
-    //               , &mut Threading::Join(&mut team));
-    //TODO: review this join code as teh possible issue.
     actor_builder.with_name("logger")
-        .build(move |context| { actor::logger::run(context, worker_rx.clone()) }
-               , &mut Threading::Spawn);
-
-    //    , &mut Threading::Join(&mut team));
-
-    team.spawn();
+        .build(
+            move |context| { actor::logger::run(context, worker_rx.clone()) },
+            &mut Threading::Spawn
+        );
 }
-// TODO: need a unit test.
-
 
 #[cfg(test)]
 pub(crate) mod main_tests {
-    use std::thread::sleep;
+    use std::time::Duration;
     use steady_state::*;
+    use steady_state::graph_testing::{StageDirection, StageWaitFor};
+    use crate::actor::worker::FizzBuzzMessage;
     use super::*;
 
     #[test]
-    fn graph_test() {
-
-        let gb = GraphBuilder::for_testing();
-
-        let mut g = gb.build(MainArg { });
-
-        build_graph(&mut g);
-
-        g.start();
+    fn graph_test() -> Result<(), Box<dyn std::error::Error>> {
+        let mut graph = GraphBuilder::for_testing().build(MainArg {
         
+        });
+
+        build_graph(&mut graph);
+        graph.start();
+
+        let stage_manager = graph.stage_manager();
+
+        // Simulate data arriving via the aqueduct
+        stage_manager.actor_perform("aeron",
+            StageDirection::EchoAt(0, 0u64) // Heartbeat simulation
+        )?;
+        stage_manager.actor_perform("aeron",
+            StageDirection::EchoAt(1, 15u64) // Generator simulation
+        )?;
+
+        // Wait for the logger to process the expected FizzBuzz message
+        stage_manager.actor_perform("logger",
+            StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(1))
+        )?;
+
+        stage_manager.final_bow();
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(1))?;
+        Ok(())
     }
-
 }
-
-
-//standard needs single message passing
-//               graph test
-//               actor test
-//  demo something not send?
-//  demo wait_for_all with multiple channels
-//  demo state
-//  demo clean shutdown
-//  will be common base for the following 3
-//  hb & gen ->try worker ->async logger/shutdown
-
-
-// robust will have
-//     panic, peek, dlq, externalAwait?
-
-// performant will have
-//     full batch usage, skip iterator ?
-//     zero copy???visitor?
-
-// distributed will have
-//     stream demo between boxes
-//
-
-

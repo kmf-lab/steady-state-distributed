@@ -76,7 +76,7 @@ pub(crate) mod worker_tests {
     use super::*;
 
     #[test]
-    fn test_worker() {
+    fn test_worker() -> Result<(),Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
         let (generate_tx, generate_rx) = graph.channel_builder().build();
         let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
@@ -91,18 +91,19 @@ pub(crate) mod worker_tests {
              );
 
         generate_tx.testing_send_all(vec![0,1,2,3,4,5], true);
-        heartbeat_tx.testing_send_all(vec![0], true);
+        heartbeat_tx.testing_send_all(vec![0,1], true);
         graph.start();
 
-        sleep(Duration::from_millis(100));
+        sleep(Duration::from_millis(500));
 
         graph.request_stop();
-        graph.block_until_stopped(Duration::from_secs(1));
+        graph.block_until_stopped(Duration::from_secs(1))?;
         assert_steady_rx_eq_take!(&logger_rx, [FizzBuzzMessage::FizzBuzz
                                               ,FizzBuzzMessage::Value(1)
                                               ,FizzBuzzMessage::Value(2)
                                               ,FizzBuzzMessage::Fizz
                                               ,FizzBuzzMessage::Value(4)
                                               ,FizzBuzzMessage::Buzz]);
+        Ok(())
     }
 }

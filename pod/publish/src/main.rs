@@ -19,7 +19,7 @@ fn main() {
     let cli_args = MainArg::parse();
     let _ = init_logging(LogLevel::Info);
     let mut graph = GraphBuilder::default()
-           .with_shutdown_barrier(2)
+           .with_shutdown_barrier(2) //TODO: explain this feature..
            .build(cli_args); //or pass () if no args
 
     build_graph(&mut graph);
@@ -95,50 +95,35 @@ fn build_graph(graph: &mut Graph) {
 #[cfg(test)]
 pub(crate) mod main_tests {
     use std::thread::sleep;
+    use std::time::Duration;
     use steady_state::*;
+    use steady_state::graph_testing::{StageDirection, StageWaitFor};
     use super::*;
 
     #[test]
-    fn graph_test() {
+    fn graph_test() -> Result<(), Box<dyn Error>> {
+        // Initialize test graph with reasonable arguments
+        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
 
-        let gb = GraphBuilder::for_testing();
+        build_graph(&mut graph);
+        // Start the graph
+        graph.start();
 
-        let mut g = gb.build(MainArg {
-            rate_ms: 100,
-            beats: 10,
-        });
+        // Simulate actor behavior
+        let stage_manager = graph.stage_manager();
+        stage_manager.actor_perform("generator", StageDirection::EchoAt(0, 15u64))?;
+        stage_manager.actor_perform("heartbeat", StageDirection::Echo(0u64))?;     
+        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0, [0,0,0,0], Duration::from_secs(1)))?; //1 sec timeout
+        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1, [0,0,0,0], Duration::from_secs(1)))?; //1 sec timeout
 
-        build_graph(&mut g);
-
-        g.start();
-
-
+        stage_manager.final_bow();
+        
+        graph.request_stop();
+        graph.block_until_stopped(Duration::from_secs(1))?;
+        Ok(())
     }
-    
+
+   
 }
-
-
-
-//standard needs single message passing
-//               graph test
-//               actor test
-//  demo something not send?
-//  demo wait_for_all with multiple channels
-//  demo state
-//  demo clean shutdown
-//  will be common base for the following 3
-//  hb & gen ->try worker ->async logger/shutdown
-
-
-// robust will have
-//     panic, peek, dlq, externalAwait?
-
-// performant will have
-//     full batch usage, skip iterator ?
-//     zero copy???visitor?
-
-// distributed will have
-//     stream demo between boxes
-//
 
 
