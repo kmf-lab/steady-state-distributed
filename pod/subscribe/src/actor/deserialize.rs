@@ -2,74 +2,88 @@ use std::error::Error;
 use steady_state::*;
 
 pub(crate) struct DeserializeState {
-    shutdown_count: i32
+    shutdown_count: i32,
 }
 
-
-pub(crate) async fn run(context: SteadyContext
-                  , input: SteadyStreamRxBundle<StreamSessionMessage,2>
-                  , heartbeat: SteadyTx<u64>
-                  , generator: SteadyTx<u64>
-                  , state: SteadyState<DeserializeState>  ) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor(input.control_meta_data(),[&heartbeat, &generator]);
+pub(crate) async fn run(
+    context: SteadyContext,
+    input: SteadyStreamRxBundle<StreamSessionMessage, 2>,
+    heartbeat: SteadyTx<u64>,
+    generator: SteadyTx<u64>,
+    state: SteadyState<DeserializeState>,
+) -> Result<(), Box<dyn Error>> {
+    let cmd = context.into_monitor(input.control_meta_data(), [&heartbeat, &generator]);
     internal_behavior(cmd, input, heartbeat, generator, state).await
 }
 
-
-async fn internal_behavior<T: SteadyCommander>(mut cmd: T
-                           , input: SteadyStreamRxBundle<StreamSessionMessage,2>
-                           , heartbeat: SteadyTx<u64>
-                           , generator: SteadyTx<u64>
-                           , state: SteadyState<DeserializeState>) -> Result<(),Box<dyn Error>> {
-    let mut state = state.lock(|| DeserializeState{ shutdown_count: 0}).await;
+async fn internal_behavior<T: SteadyCommander>(
+    mut cmd: T,
+    input: SteadyStreamRxBundle<StreamSessionMessage, 2>,
+    heartbeat: SteadyTx<u64>,
+    generator: SteadyTx<u64>,
+    state: SteadyState<DeserializeState>,
+) -> Result<(), Box<dyn Error>> {
+    let mut state = state.lock(|| DeserializeState { shutdown_count: 0 }).await;
 
     let mut input = input.lock().await;
-    //pull out of vec of guards so we can give them great names
-    let mut rx_generator = input.remove(1);//start at the end.
-    let mut rx_heartbeat = input.remove(0);
-    drop(input);
+    let mut rx_generator = input.remove(1); // Stream 1 for generator
+    let mut rx_heartbeat = input.remove(0); // Stream 0 for heartbeat
+    drop(input); // Safety to prevent accidental reuse
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
 
-    while cmd.is_running(|| rx_heartbeat.is_empty() && rx_generator.is_empty()
-                        && tx_generator.mark_closed()
-                        && tx_heartbeat.mark_closed()) {
-         await_for_any!(
-            //periodic!(Duration::from_secs(1)),
-            wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,1)),
-            wait_for_all!(cmd.wait_avail(&mut rx_generator,1),cmd.wait_vacant(&mut tx_generator,1))
-         );
+    while cmd.is_running(|| {
+               rx_heartbeat.is_empty()
+            && rx_generator.is_empty()
+            && tx_generator.mark_closed()
+            && tx_heartbeat.mark_closed()
+    }) {
+        await_for_any!(
+            wait_for_all!(
+                cmd.wait_avail(&mut rx_heartbeat, 1),
+                cmd.wait_vacant(&mut tx_heartbeat, 1)
+            ),
+            wait_for_all!(
+                cmd.wait_avail(&mut rx_generator, 1),
+                cmd.wait_vacant(&mut tx_generator, 1)
+            )
+        );
 
-        if cmd.vacant_units(&mut tx_heartbeat)>0 {
+        if cmd.vacant_units(&mut tx_heartbeat) > 0 {
             if let Some(bytes) = cmd.try_take(&mut rx_heartbeat) {
-                // Ensure bytes.1 has exactly 8 bytes and convert to [u8; 8]
-                let byte_array: [u8; 8] = bytes.1.as_ref().try_into().expect("Expected exactly 8 bytes");
+                let byte_array: [u8; 8] = bytes
+                    .1
+                    .as_ref()
+                    .try_into()
+                    .expect("Expected exactly 8 bytes");
                 let beat = u64::from_be_bytes(byte_array);
 
-                if u64::MAX == beat {
+                if beat == u64::MAX {
                     state.shutdown_count += 1;
-                    if 2==state.shutdown_count {
+                    if state.shutdown_count == 2 {
                         cmd.request_shutdown().await;
-                    }         
+                    }
                 } else {
-                    let _ = cmd.try_send(&mut tx_heartbeat, beat).is_sent();
+                    assert!(cmd.try_send(&mut tx_heartbeat, beat).is_sent());
                 }
             }
         }
 
-        if cmd.vacant_units(&mut tx_generator)>0  {
+        if cmd.vacant_units(&mut tx_generator) > 0 {
             if let Some(bytes) = cmd.try_take(&mut rx_generator) {
-                         
-                // Ensure bytes.1 has exactly 8 bytes and convert to [u8; 8]
-                let byte_array: [u8; 8] = bytes.1.as_ref().try_into().expect("Expected exactly 8 bytes");
+                let byte_array: [u8; 8] = bytes
+                    .1
+                    .as_ref()
+                    .try_into()
+                    .expect("Expected exactly 8 bytes");
                 let generated = u64::from_be_bytes(byte_array);
-                if u64::MAX == generated {
-                    state.shutdown_count += 1;                
-                    if 2==state.shutdown_count {
+                if generated == u64::MAX {
+                    state.shutdown_count += 1;
+                    if state.shutdown_count == 2 {
                         cmd.request_shutdown().await;
                     }
                 } else {
-                    cmd.try_send(&mut tx_generator, generated).is_sent();
+                    assert!(cmd.try_send(&mut tx_generator, generated).is_sent());
                 }
             }
         }
@@ -79,35 +93,49 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
 
 #[cfg(test)]
 pub(crate) mod deserialize_tests {
-    pub use std::thread::sleep;
-    use steady_state::*;
-    use crate::arg::MainArg;
     use super::*;
+    use std::thread::sleep;
+    use std::time::Duration;
+    use crate::arg::MainArg;
 
     #[test]
     fn test_deserialize() -> Result<(), Box<dyn Error>> {
-        let mut graph = GraphBuilder::for_testing().build(());
-        //default capacity is 64 unless specified
+        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
+
         let (stream_tx, stream_rx) = graph.channel_builder().build_stream_bundle::<_, 2>(8);
         let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
         let (generator_tx, generator_rx) = graph.channel_builder().build();
 
-        //TODO: write some serilized data
-
         let state = new_state();
-        graph.actor_builder()
+        graph
+            .actor_builder()
             .with_name("UnitTest")
-            .build(move |context|
-                internal_behavior(context, stream_rx.clone(), heartbeat_tx.clone(), generator_tx.clone(), state.clone())
-            , SoloAct);
+            .build(
+                move |context| {
+                    internal_behavior(
+                        context,
+                        stream_rx.clone(),
+                        heartbeat_tx.clone(),
+                        generator_tx.clone(),
+                        state.clone(),
+                    )
+                },
+                SoloAct,
+            );
 
-        graph.start(); //startup the graph
-        sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
-        graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
+        // Send serialized data matching serialize.rs test output
+        let now = Instant::now();
+        stream_tx[0].testing_send_all(vec![StreamSessionMessage::wrap(1,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])], true);
+        stream_tx[1].testing_send_all(vec![StreamSessionMessage::wrap(2,now,now,&[0, 0, 0, 0, 0, 0, 0, 42])], true);
 
-        assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
-        
-        graph.block_until_stopped(Duration::from_secs(1))
-        
+        graph.start();
+        sleep(Duration::from_millis(100)); // Match serialize.rs timing
+        graph.request_shutdown();
+        graph.block_until_stopped(Duration::from_secs(1))?;
+
+        assert_steady_rx_eq_take!(&heartbeat_rx, vec![0u64]);
+        assert_steady_rx_eq_take!(&generator_rx, vec![42u64]);
+
+        Ok(())
     }
 }

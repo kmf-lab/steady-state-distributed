@@ -89,41 +89,39 @@ fn build_graph(graph: &mut Graph) {
         );
 }
 
-//#[cfg(test)]
-//pub(crate) mod main_tests {
-//    use std::time::Duration;
-//    use steady_state::*;
- //   use steady_state::graph_testing::{StageDirection, StageWaitFor};
-  //  use crate::actor::worker::FizzBuzzMessage;
-   // use super::*;
-//
-//     #[test]
-//     fn graph_test() -> Result<(), Box<dyn std::error::Error>> {
-//         let mut graph = GraphBuilder::for_testing().build(MainArg {
-//         
-//         });
-// 
-//         build_graph(&mut graph);
-//         graph.start();
-// 
-//         let stage_manager = graph.stage_manager();
-// 
-//         // Simulate data arriving via the aqueduct
-//         stage_manager.actor_perform("aeron",
-//             StageDirection::EchoAt(0, 0u64) // Heartbeat simulation
-//         )?;
-//         stage_manager.actor_perform("aeron",
-//             StageDirection::EchoAt(1, 15u64) // Generator simulation
-//         )?;
-// 
-//         // Wait for the logger to process the expected FizzBuzz message
-//         stage_manager.actor_perform("logger",
-//             StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(1))
-//         )?;
-// 
-//         stage_manager.final_bow();
-//         graph.request_shutdown();
-//         graph.block_until_stopped(Duration::from_secs(1))?;
-//         Ok(())
-//     }
-// }
+#[cfg(test)]
+pub(crate) mod main_tests {
+   use std::time::Duration;
+   use steady_state::*;
+   use steady_state::graph_testing::{StageDirection, StageWaitFor};
+   use crate::actor::worker::FizzBuzzMessage;
+   use super::*;
+
+    #[test]
+    fn graph_test() -> Result<(), Box<dyn std::error::Error>> {
+        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
+
+        build_graph(&mut graph);
+        graph.start();
+
+        let stage_manager = graph.stage_manager();
+        
+        let now = Instant::now();
+        // Simulate data arriving via the aqueduct
+        stage_manager.actor_perform("aeron",
+            StageDirection::EchoAt(0, StreamSessionMessage::wrap(1,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])) // Heartbeat simulation
+        )?;
+        stage_manager.actor_perform("aeron",
+            StageDirection::EchoAt(1, StreamSessionMessage::wrap(2,now,now,&[0, 0, 0, 0, 0, 0, 0, 42])) // Generator simulation
+        )?;
+        // 
+        // // Wait for the logger to process the expected FizzBuzz message
+        // stage_manager.actor_perform("logger",
+        //     StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(1))
+        // )?;
+        // 
+         stage_manager.final_bow();
+         graph.request_shutdown();
+         graph.block_until_stopped(Duration::from_secs(1))
+    }
+}
