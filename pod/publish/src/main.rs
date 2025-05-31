@@ -10,7 +10,7 @@ pub(crate) mod actor {
    pub(crate) mod serialize;
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         env::set_var("TELEMETRY_SERVER_PORT", "5551");
         env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
@@ -27,8 +27,7 @@ fn main() {
     //startup entire graph
     graph.start();
     // your graph is running here until actor calls graph stop
-    graph.block_until_stopped(std::time::Duration::from_secs(600));
-    error!("should see 10 min since shutdown requested");
+    graph.block_until_stopped(std::time::Duration::from_secs(600))
 }
 
 fn build_graph(graph: &mut Graph) {
@@ -54,16 +53,16 @@ fn build_graph(graph: &mut Graph) {
     let state = new_state();
     actor_builder.with_name("heartbeat")
         .build(move |context| { actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone()) }
-               , &mut Threading::Spawn);
+               , SoloAct);
 
     let state = new_state();
     actor_builder.with_name("generator")
         .build(move |context| { actor::generator::run(context, generator_tx.clone(), state.clone()) }
-               , &mut Threading::Spawn);
+               , SoloAct);
 
     actor_builder.with_name("serialize")
         .build(move |context| { actor::serialize::run(context, heartbeat_rx.clone(), generator_rx.clone(), output_tx.clone()) }
-               , &mut Threading::Spawn);
+               , SoloAct);
 
     let aeron_channel = AeronConfig::new()
         //.with_media_type(MediaType::Ipc)
@@ -88,7 +87,7 @@ fn build_graph(graph: &mut Graph) {
 
     output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel, 40)
                              , &mut actor_builder.with_name("publish")
-                             , &mut Threading::Spawn
+                             , SoloAct
     );
 }
 
@@ -118,7 +117,7 @@ pub(crate) mod main_tests {
 
         stage_manager.final_bow();
         
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
         Ok(())
     }

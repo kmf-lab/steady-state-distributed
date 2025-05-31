@@ -9,7 +9,7 @@ pub(crate) mod actor {
     pub(crate) mod logger;
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         env::set_var("TELEMETRY_SERVER_PORT", "5552");
         env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
@@ -24,8 +24,7 @@ fn main() {
     build_graph(&mut graph);
 
     graph.start();
-    graph.block_until_stopped(std::time::Duration::from_secs(600));
-    error!("should see 10 min since shutdown requested");
+    graph.block_until_stopped(std::time::Duration::from_secs(600))
 }
 
 /// Builds the graph for both normal operation and testing.
@@ -67,26 +66,26 @@ fn build_graph(graph: &mut Graph) {
     input_tx.build_aqueduct(
         AqueTech::Aeron(aeron_channel, 40),
         &mut actor_builder.with_name("aeron"),
-        &mut Threading::Spawn
+        SoloAct
     );
 
     let steady = new_state();
     actor_builder.with_name("deserialize")
         .build(
             move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone(), steady.clone()) },
-            &mut Threading::Spawn
+            SoloAct
         );
 
     actor_builder.with_name("worker")
         .build(
             move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone()) },
-            &mut Threading::Spawn
+            SoloAct
         );
 
     actor_builder.with_name("logger")
         .build(
             move |context| { actor::logger::run(context, worker_rx.clone()) },
-            &mut Threading::Spawn
+            SoloAct
         );
 }
 
@@ -123,7 +122,7 @@ pub(crate) mod main_tests {
         )?;
 
         stage_manager.final_bow();
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
         Ok(())
     }

@@ -35,7 +35,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         if beats == state.count {
             assert!(cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
             info!("request graph stop");
-            cmd.request_graph_stop().await; //TODO: rename to request_shutdown
+            cmd.request_shutdown().await; //TODO: rename to request_shutdown
         }
     }
     Ok(())
@@ -58,13 +58,13 @@ pub(crate) mod heartbeat_tests {
         let state = new_state();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context|
+            .build(move |context|
                    internal_behavior(context, heartbeat_tx.clone(), state.clone())
-            );
+            ,SoloAct);
 
         graph.start(); //startup the graph
         sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
-        graph.request_stop(); //our actor has no input so it immediately stops upon this request
+        graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1))?;
         assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
         Ok(())

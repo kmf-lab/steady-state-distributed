@@ -49,7 +49,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                 if u64::MAX == beat {
                     state.shutdown_count += 1;
                     if 2==state.shutdown_count {
-                        cmd.request_graph_stop().await;
+                        cmd.request_shutdown().await;
                     }         
                 } else {
                     let _ = cmd.try_send(&mut tx_heartbeat, beat).is_sent();
@@ -66,7 +66,7 @@ async fn internal_behavior<T: SteadyCommander>(mut cmd: T
                 if u64::MAX == generated {
                     state.shutdown_count += 1;                
                     if 2==state.shutdown_count {
-                        cmd.request_graph_stop().await;
+                        cmd.request_shutdown().await;
                     }
                 } else {
                     cmd.try_send(&mut tx_generator, generated).is_sent();
@@ -97,13 +97,13 @@ pub(crate) mod deserialize_tests {
         let state = new_state();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context|
+            .build(move |context|
                 internal_behavior(context, stream_rx.clone(), heartbeat_tx.clone(), generator_tx.clone(), state.clone())
-            );
+            , SoloAct);
 
         graph.start(); //startup the graph
         sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
-        graph.request_stop(); //our actor has no input so it immediately stops upon this request
+        graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
         graph.block_until_stopped(Duration::from_secs(1))?;
 
 

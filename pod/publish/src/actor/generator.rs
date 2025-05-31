@@ -28,7 +28,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
              if beats*EXPECTED_UNITS_PER_BEAT == state.value {
                  assert!(cmd.send_async(&mut generated, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
                  info!("request graph stop");
-                 cmd.request_graph_stop().await;
+                 cmd.request_shutdown().await;
              }
          }
     }
@@ -51,11 +51,11 @@ pub(crate) mod generator_tests {
         let state = new_state();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build_spawn(move |context| internal_behavior(context, generate_tx.clone(), state.clone()) );
+            .build(move |context| internal_behavior(context, generate_tx.clone(), state.clone()), SoloAct );
 
         graph.start();
         sleep(Duration::from_millis(100));
-        graph.request_stop();
+        graph.request_shutdown();
 
         graph.block_until_stopped(Duration::from_secs(1))?;
 

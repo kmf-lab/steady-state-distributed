@@ -80,9 +80,9 @@ pub(crate) mod serialize_tests {
 
                 graph.actor_builder()
                     .with_name("UnitTest")
-                    .build_spawn(move |context|
+                    .build(move |context|
                         internal_behavior(context, heartbeat_rx.clone(), generator_rx.clone(), stream_tx.clone())
-                    );
+                    , SoloAct);
 
                 // Send test data to inputs
                 heartbeat_tx.testing_send_all(vec![0u64], true);
@@ -90,15 +90,14 @@ pub(crate) mod serialize_tests {
 
                 graph.start();
                 sleep(Duration::from_millis(100));
-                graph.request_stop();
+                graph.request_shutdown();
                 graph.block_until_stopped(Duration::from_secs(1))?;
 
                 // Verify serialized outputs - streams produce (StreamSimpleMessage, Box<[u8]>) tuples
                 // 0u64.to_be_bytes() = [0, 0, 0, 0, 0, 0, 0, 0]
                 // 42u64.to_be_bytes() = [0, 0, 0, 0, 0, 0, 0, 42]
-               // let expected_heartbeat = (StreamSimpleMessage::new(8), vec![0, 0, 0, 0, 0, 0, 0, 0].into_boxed_slice());
-                ///let expected_generator = (StreamSimpleMessage::new(8), vec![0, 0, 0, 0, 0, 0, 0, 42].into_boxed_slice());
-
+                // let expected_heartbeat = (StreamSimpleMessage::new(8), vec![0, 0, 0, 0, 0, 0, 0, 0].into_boxed_slice());
+                // let expected_generator = (StreamSimpleMessage::new(8), vec![0, 0, 0, 0, 0, 0, 0, 42].into_boxed_slice());
                 // Verify serialized outputs - automatically detects streams!
                 //assert_steady_rx_eq_take!(&stream_rx[0], vec![&[0, 0, 0, 0, 0, 0, 0, 0]]);
                 //assert_steady_rx_eq_take!(&stream_rx[1], vec![&[0, 0, 0, 0, 0, 0, 0, 42]]);

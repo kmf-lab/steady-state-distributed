@@ -43,12 +43,12 @@ pub(crate) mod logger_tests {
 
         graph.actor_builder().with_name("UnitTest")
             .build(move |context| internal_behavior(context, fizz_buzz_rx.clone())
-                   , &mut Threading::Spawn);
+                   , SoloAct);
 
         graph.start();
         fizz_buzz_tx.testing_send_all(vec![FizzBuzzMessage::Fizz], true);
         sleep(Duration::from_millis(300));
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
 
         assert_in_logs!(vec!["Msg Fizz"]);

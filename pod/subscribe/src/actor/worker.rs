@@ -87,7 +87,7 @@ pub(crate) mod worker_tests {
                                                              , heartbeat_rx.clone()
                                                              , generate_rx.clone()
                                                              , logger_tx.clone())
-                 , &mut Threading::Spawn
+                 , SoloAct
              );
 
         generate_tx.testing_send_all(vec![0,1,2,3,4,5], true);
@@ -96,7 +96,7 @@ pub(crate) mod worker_tests {
 
         sleep(Duration::from_millis(500));
 
-        graph.request_stop();
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
         assert_steady_rx_eq_take!(&logger_rx, [FizzBuzzMessage::FizzBuzz
                                               ,FizzBuzzMessage::Value(1)
