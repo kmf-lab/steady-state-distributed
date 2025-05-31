@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli_args = MainArg::parse();
     let _ = init_logging(LogLevel::Info);
     let mut graph = GraphBuilder::default()
-        .with_shutdown_barrier(2)
+     ///may be an issue for our testing, removed for now.   .with_shutdown_barrier(2)
         .build(cli_args);
 
     build_graph(&mut graph);
@@ -116,10 +116,10 @@ pub(crate) mod main_tests {
         )?;
         // 
         // // Wait for the logger to process the expected FizzBuzz message
-        // stage_manager.actor_perform("logger",
-        //     StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(1))
-        // )?;
-        // 
+        stage_manager.actor_perform("logger",
+             StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(1))
+         )?;
+         
          stage_manager.final_bow();
          graph.request_shutdown();
          graph.block_until_stopped(Duration::from_secs(1))
