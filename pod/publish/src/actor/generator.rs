@@ -42,7 +42,6 @@ pub(crate) mod generator_tests {
     use steady_state::*;
     use crate::arg::MainArg;
     use super::*;
-
     #[test]
     fn test_generator() -> Result<(),Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(MainArg::default());
@@ -51,15 +50,21 @@ pub(crate) mod generator_tests {
         let state = new_state();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build(move |context| internal_behavior(context, generate_tx.clone(), state.clone()), SoloAct );
+            .build(move |context| internal_behavior(context, generate_tx.clone(), state.clone()), SoloAct);
 
         graph.start();
-        sleep(Duration::from_millis(100));
-        graph.request_shutdown();
 
+        // Give it time to generate a few values, then stop
+        std::thread::sleep(Duration::from_millis(50));
+        graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
 
-        assert_steady_rx_eq_take!(generate_rx,vec!(0,1));
+        // Should have generated at least a couple values
+        let results = generate_rx.testing_take_all();
+        assert!(results.len() >= 2);
+        assert_eq!(results[0], 0);
+        assert_eq!(results[1], 1);
         Ok(())
     }
+
 }

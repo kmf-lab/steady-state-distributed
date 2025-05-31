@@ -51,22 +51,27 @@ pub(crate) mod heartbeat_tests {
 
     #[test]
     fn test_heartbeat() -> Result<(), Box<dyn Error>> {
-        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
-        //default capacity is 64 unless specified
+        let mut args = MainArg::default();
+        args.beats = 3; // Set a small number for testing
+        args.rate_ms = 10; // Fast rate for testing
+
+        let mut graph = GraphBuilder::for_testing().build(args);
         let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
 
         let state = new_state();
         graph.actor_builder()
             .with_name("UnitTest")
-            .build(move |context|
-                   internal_behavior(context, heartbeat_tx.clone(), state.clone())
-            ,SoloAct);
+            .build(move |context| internal_behavior(context, heartbeat_tx.clone(), state.clone()), SoloAct);
 
-        graph.start(); //startup the graph
-        sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
-        graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
+        graph.start();
+        std::thread::sleep(Duration::from_millis(100)); // Wait for a few beats
         graph.block_until_stopped(Duration::from_secs(1))?;
-        assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
+
+        let results = heartbeat_rx.testing_take_all();
+        assert!(results.len() >= 2);
+        assert_eq!(results[0], 0);
+        assert_eq!(results[1], 1);
         Ok(())
     }
+
 }

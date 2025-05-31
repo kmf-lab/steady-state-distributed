@@ -104,11 +104,10 @@ pub(crate) mod deserialize_tests {
         graph.start(); //startup the graph
         sleep(Duration::from_millis(1000 * 3)); //this is the default from args * 3
         graph.request_shutdown(); //our actor has no input so it immediately stops upon this request
-        graph.block_until_stopped(Duration::from_secs(1))?;
 
-
-        //TODO: assert we deserilized it
-        // assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
-        Ok(())
+        assert_steady_rx_eq_take!(&heartbeat_rx, vec!(0,1));
+        
+        graph.block_until_stopped(Duration::from_secs(1))
+        
     }
 }

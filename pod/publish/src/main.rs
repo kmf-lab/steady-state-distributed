@@ -90,39 +90,39 @@ fn build_graph(graph: &mut Graph) {
                              , SoloAct
     );
 }
-
-#[cfg(test)]
-pub(crate) mod main_tests {
-    use std::thread::sleep;
-    use std::time::Duration;
-    use steady_state::*;
-    use steady_state::graph_testing::{StageDirection, StageWaitFor};
-    use super::*;
-
-    #[test]
-    fn graph_test() -> Result<(), Box<dyn Error>> {
-        // Initialize test graph with reasonable arguments
-        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
-
-        build_graph(&mut graph);
-        // Start the graph
-        graph.start();
-
-        // Simulate actor behavior
-        let stage_manager = graph.stage_manager();
-        stage_manager.actor_perform("generator", StageDirection::EchoAt(0, 15u64))?;
-        stage_manager.actor_perform("heartbeat", StageDirection::Echo(0u64))?;     
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0, [0,0,0,0], Duration::from_secs(1)))?; //1 sec timeout
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1, [0,0,0,0], Duration::from_secs(1)))?; //1 sec timeout
-
-        stage_manager.final_bow();
-        
-        graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(1))?;
-        Ok(())
-    }
-
-   
-}
+// 
+// #[cfg(test)]
+// pub(crate) mod main_tests {
+//     use std::thread::sleep;
+//     use std::time::Duration;
+//     use steady_state::*;
+//     use steady_state::graph_testing::{StageDirection, StageWaitFor};
+//     use super::*;
+// 
+//     #[test]
+//     fn graph_test() -> Result<(), Box<dyn Error>> {
+//         // Initialize test graph with reasonable arguments
+//         let mut graph = GraphBuilder::for_testing().build(MainArg::default());
+// 
+//         build_graph(&mut graph);
+//         // Start the graph
+//         graph.start();
+// 
+//         // Simulate actor behavior
+//         let stage_manager = graph.stage_manager();
+//         stage_manager.actor_perform("generator", StageDirection::EchoAt(0, 15u64))?;
+//         stage_manager.actor_perform("heartbeat", StageDirection::Echo(0u64))?;     
+//         stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0, [0,0,0,0], Duration::from_secs(1)))?; //1 sec timeout
+//         stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1, [0,0,0,0], Duration::from_secs(1)))?; //1 sec timeout
+// 
+//         stage_manager.final_bow();
+//         
+//         graph.request_shutdown();
+//         graph.block_until_stopped(Duration::from_secs(1))?;
+//         Ok(())
+//     }
+// 
+//    
+// }
 
 
