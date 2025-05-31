@@ -17,8 +17,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli_args = MainArg::parse();
     let _ = init_logging(LogLevel::Info);
+    //this is main() NOT in test so the barrier only effects release mode
     let mut graph = GraphBuilder::default()
-     ///may be an issue for our testing, removed for now.   .with_shutdown_barrier(2)
+        .with_shutdown_barrier(2)
         .build(cli_args);
 
     build_graph(&mut graph);
@@ -99,7 +100,9 @@ pub(crate) mod main_tests {
 
     #[test]
     fn graph_test() -> Result<(), Box<dyn std::error::Error>> {
-        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
+         // this is our special test graph without any barrier so we can shut down from the main thread.
+        let mut graph = GraphBuilder::for_testing()
+                                    .build(MainArg::default());
 
         build_graph(&mut graph);
         graph.start();
