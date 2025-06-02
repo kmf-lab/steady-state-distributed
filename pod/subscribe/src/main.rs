@@ -110,20 +110,20 @@ pub(crate) mod main_tests {
         let stage_manager = graph.stage_manager();
         
         let now = Instant::now();
-        // Simulate data arriving via the aqueduct
-        stage_manager.actor_perform("aeron",
-            StageDirection::EchoAt(0, StreamSessionMessage::wrap(1,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])) // Heartbeat simulation
-        )?;
-        stage_manager.actor_perform("aeron",
-            StageDirection::EchoAt(1, StreamSessionMessage::wrap(2,now,now,&[0, 0, 0, 0, 0, 0, 0, 42])) // Generator simulation
-        )?;
-        // 
-        // // Wait for the logger to process the expected FizzBuzz message
-        stage_manager.actor_perform("logger",
-             StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(1))
-         )?;
-         
+         //               as soon as we add 2 then we hang....
+         stage_manager.actor_perform("aeron",
+              StageDirection::EchoAt(0, StreamSessionMessage::wrap(1,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])) // Heartbeat simulation
+          )?;
+          stage_manager.actor_perform("aeron",
+              StageDirection::EchoAt(1, StreamSessionMessage::wrap(2,now,now,&[0, 0, 0, 0, 0, 0, 0, 42])) // Generator simulation
+          )?;
+        error!("eeeeeeeeeeeeeee");
+          stage_manager.actor_perform("logger",
+               StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(1))
+           )?;
+ error!("xxxxxxxxxxxxxxxxx");         
          stage_manager.final_bow();
+        error!("ssssssssssssss");
          graph.request_shutdown();
          graph.block_until_stopped(Duration::from_secs(1))
     }

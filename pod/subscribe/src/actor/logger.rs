@@ -1,4 +1,3 @@
-use std::sync::{Mutex};
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
@@ -18,7 +17,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<FizzBuzz
         await_for_all!(cmd.wait_avail(&mut rx, 1));
         count += 1;
         if let Some(msg) = cmd.try_take(&mut rx) {
-            if (count < 100) {
+            if count < 100 {
                 info!("Msg {:?}", msg );
             }
     }

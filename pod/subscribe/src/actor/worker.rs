@@ -47,7 +47,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                      cmd.wait_avail(&mut generator_rx, count_down_items_per_tick)
                                   );
 
-        if let Some(h) = cmd.try_take(&mut heartbeat_rx) {
+        if let Some(_h) = cmd.try_take(&mut heartbeat_rx) {
             //for each beat we empty the generated data
             //try to take count if possible, but no more, do NOT use take_into_iterator as it consumes all it sees.
             while let Some(item) = cmd.try_take(&mut generator_rx)  {
@@ -55,7 +55,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                 //      is full. Another popular choice is Warn so it logs if it gets filled.
                 let result = cmd.send_async(&mut logger_tx, FizzBuzzMessage::new(item)
                                , SendSaturation::AwaitForRoom).await;
-                if let SendOutcome::Blocked(d) = result {
+                if let SendOutcome::Blocked(_d) = result {
                     //note: we already consumed d so it is lost but we know we are shutting down now.
                     break;
                 }

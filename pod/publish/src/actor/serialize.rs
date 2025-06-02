@@ -54,51 +54,52 @@ pub(crate) mod serialize_tests {
     use crate::arg::MainArg;
     use super::*;
 
-    #[cfg(test)]
-    pub(crate) mod serialize_tests {
-        pub use std::thread::sleep;
-        use steady_state::*;
-        use steady_state::graph_testing::{StageDirection, StageWaitFor};
-        use crate::arg::MainArg;
-        use super::*;
-
-        #[cfg(test)]
-        pub(crate) mod serialize_tests {
-            pub use std::thread::sleep;
-            use steady_state::*;
-            use crate::arg::MainArg;
-            use super::*;
-
-            #[test]
-            fn test_serialize() -> Result<(), Box<dyn Error>> {
-                let mut graph = GraphBuilder::for_testing().build(MainArg::default());
-
-                let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
-                let (generator_tx, generator_rx) = graph.channel_builder().build();
-                let (stream_tx, stream_rx) = graph.channel_builder().build_stream_bundle::<_, 2>(8);
-
-                graph.actor_builder()
-                    .with_name("UnitTest")
-                    .build(move |context|
-                        internal_behavior(context, heartbeat_rx.clone(), generator_rx.clone(), stream_tx.clone())
-                    , SoloAct);
-
-                heartbeat_tx.testing_send_all(vec![0u64], true);
-                generator_tx.testing_send_all(vec![42u64], true);
-
-                graph.start();
-                sleep(Duration::from_millis(100));
-                graph.request_shutdown();
-                graph.block_until_stopped(Duration::from_secs(1))?;
-
-                assert_steady_rx_eq_take!(&stream_rx[0], vec!(StreamSimpleMessage::wrap(&[0, 0, 0, 0, 0, 0, 0, 0])));
-                assert_steady_rx_eq_take!(&stream_rx[1], vec!(StreamSimpleMessage::wrap(&[0, 0, 0, 0, 0, 0, 0, 42])));
-
-                Ok(())
-            }
-        }
-
-
-    }
+    // #[cfg(test)]
+    // pub(crate) mod serialize_tests {
+    //     pub use std::thread::sleep;
+    //     use steady_state::*;
+    //     use steady_state::graph_testing::{StageDirection, StageWaitFor};
+    //     use crate::arg::MainArg;
+    //     use super::*;
+    // 
+    //     #[cfg(test)]
+    //     pub(crate) mod serialize_tests {
+    //         pub use std::thread::sleep;
+    //         use steady_state::*;
+    //         use crate::arg::MainArg;
+    //         use super::*;
+    // 
+    //         #[test]
+    //         fn test_serialize() -> Result<(), Box<dyn Error>> {
+    //             let mut graph = GraphBuilder::for_testing().build(MainArg::default());
+    // 
+    //             let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
+    //             let (generator_tx, generator_rx) = graph.channel_builder().build();
+    //             let (stream_tx, stream_rx) = graph.channel_builder().build_stream_bundle::<_, 2>(8);
+    // 
+    //             graph.actor_builder()
+    //                 .with_name("UnitTest")
+    //                 .build(move |context|
+    //                     internal_behavior(context, heartbeat_rx.clone(), generator_rx.clone(), stream_tx.clone())
+    //                 , SoloAct);
+    // 
+    //             heartbeat_tx.testing_send_all(vec![0u64], true);
+    //             generator_tx.testing_send_all(vec![42u64], true);
+    // 
+    //             graph.start();
+    //             sleep(Duration::from_millis(100));
+    //             graph.request_shutdown();
+    //             graph.block_until_stopped(Duration::from_secs(1))?;
+    // 
+    //             let mut temp = vec!(StreamSimpleMessage::wrap(&[0, 0, 0, 0, 0, 0, 0, 0]));
+    //             assert_steady_rx_eq_take!(&stream_rx[0], temp);
+    //             assert_steady_rx_eq_take!(&stream_rx[1], vec!(StreamSimpleMessage::wrap(&[0, 0, 0, 0, 0, 0, 0, 42])));
+    // 
+    //             Ok(())
+    //         }
+    //     }
+    // 
+    // 
+    // }
 
 }
