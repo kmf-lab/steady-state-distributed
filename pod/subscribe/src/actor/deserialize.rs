@@ -7,7 +7,7 @@ pub(crate) struct DeserializeState {
 
 pub(crate) async fn run(
     context: SteadyContext,
-    input: SteadyStreamRxBundle<StreamSessionMessage, 2>,
+    input: SteadyStreamRxBundle<StreamIngress, 2>,
     heartbeat: SteadyTx<u64>,
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
@@ -18,7 +18,7 @@ pub(crate) async fn run(
 
 async fn internal_behavior<T: SteadyCommander>(
     mut cmd: T,
-    input: SteadyStreamRxBundle<StreamSessionMessage, 2>,
+    input: SteadyStreamRxBundle<StreamIngress, 2>,
     heartbeat: SteadyTx<u64>,
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
@@ -125,8 +125,8 @@ pub(crate) mod deserialize_tests {
 
         // Send serialized data matching serialize.rs test output
         let now = Instant::now();
-        stream_tx[0].testing_send_all(vec![StreamSessionMessage::wrap(1,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])], true);
-        stream_tx[1].testing_send_all(vec![StreamSessionMessage::wrap(2,now,now,&[0, 0, 0, 0, 0, 0, 0, 42])], true);
+        stream_tx[0].testing_send_all(vec![StreamIngress::by_ref(1,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])], true);
+        stream_tx[1].testing_send_all(vec![StreamIngress::by_ref(2,now,now,&[0, 0, 0, 0, 0, 0, 0, 42])], true);
 
         graph.start();
         sleep(Duration::from_millis(100)); // Match serialize.rs timing

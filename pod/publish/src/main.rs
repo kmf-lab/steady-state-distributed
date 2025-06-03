@@ -92,8 +92,7 @@ fn build_graph(graph: &mut Graph) {
 }
 
 #[cfg(test)]
-pub(crate) mod main_tests {
-    use std::thread::sleep;
+pub(crate) mod publish_main_tests {
     use std::time::Duration;
     use steady_state::*;
     use steady_state::graph_testing::{StageDirection, StageWaitFor};
@@ -111,9 +110,10 @@ pub(crate) mod main_tests {
         // Simulate actor behavior
         let stage_manager = graph.stage_manager();
         stage_manager.actor_perform("generator", StageDirection::EchoAt(0, 15u64))?;
-        stage_manager.actor_perform("heartbeat", StageDirection::Echo(0u64))?;     
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0,StreamSimpleMessage::wrap(&[0,0,0,0,0,0,0,0]), Duration::from_secs(4)))?; 
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1,StreamSimpleMessage::wrap(&[0,0,0,0,0,0,0,15]), Duration::from_secs(4)))?; 
+        stage_manager.actor_perform("heartbeat", StageDirection::Echo(0u64))?;
+        //in this test we do NOT send anything to aeron instead we confirm what we WOULD have sent matches our expectations.
+        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0, StreamEgress::by_box(&[0u8,0,0,0,0,0,0,0]), Duration::from_secs(4)))?;
+        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1, StreamEgress::by_box(&[0u8,0,0,0,0,0,0,15]), Duration::from_secs(4)))?;
 
         stage_manager.final_bow();
         

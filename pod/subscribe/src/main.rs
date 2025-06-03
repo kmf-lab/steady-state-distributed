@@ -41,7 +41,7 @@ fn build_graph(graph: &mut Graph) {
     let (input_tx, input_rx) = channel_builder
         .with_capacity(6400)
         .with_labels(&["input"], true)
-        .build_stream_bundle::<StreamSessionMessage, 2>(1000);
+        .build_stream_bundle::<StreamIngress, 2>(1000);
 
     let (heartbeat_tx, heartbeat_rx) = channel_builder
         .with_labels(&["heartbeat"], true)
@@ -91,7 +91,7 @@ fn build_graph(graph: &mut Graph) {
 }
 
 #[cfg(test)]
-pub(crate) mod main_tests {
+pub(crate) mod subscribe_main_tests {
    use std::time::Duration;
    use steady_state::*;
    use steady_state::graph_testing::{StageDirection, StageWaitFor};
@@ -110,19 +110,28 @@ pub(crate) mod main_tests {
         graph.start();
                 
         let stage_manager = graph.stage_manager();
-        let now = Instant::now();
+
+        let first_byte_arrival = Instant::now();
+        let last_byte_finished = Instant::now();
+        let sender_session_id = 8675309; // jenny
+
          //NOTE: we send 1 generated message and THEN the heartbeat to release it
          //      we also make sure the session_id matches and make up an arrival time of now
-        stage_manager.actor_perform("aeron",  
-              StageDirection::EchoAt(1, StreamSessionMessage::wrap(41,now,now,&[0, 0, 0, 0, 0, 0, 0, 15])) // Generator simulation
+        stage_manager.actor_perform("aeron",  // Generator simulation
+              StageDirection::EchoAt(1, StreamIngress::by_ref(sender_session_id
+                                                              ,first_byte_arrival,last_byte_finished
+                                                              ,&[0, 0, 0, 0, 0, 0, 0, 15]))
         )?;
-        stage_manager.actor_perform("aeron",
-              StageDirection::EchoAt(0, StreamSessionMessage::wrap(40,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])) // Heartbeat simulation
+        //these messages are FAKE and did not come from aeron instead we INJECT them here like they arrived
+        stage_manager.actor_perform("aeron",  // Heartbeat simulation
+              StageDirection::EchoAt(0, StreamIngress::by_ref(sender_session_id
+                                                              ,first_byte_arrival,last_byte_finished
+                                                              ,&[0, 0, 0, 0, 0, 0, 0, 0]))
         )?;
         stage_manager.actor_perform("logger",
                StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(60))
         )?;
-;         
+
         stage_manager.final_bow();
 
         graph.request_shutdown();
