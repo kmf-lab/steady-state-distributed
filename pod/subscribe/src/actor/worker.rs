@@ -38,13 +38,14 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut generator_rx = generator.lock().await;
     let mut logger_tx = logger.lock().await;
 
-    while cmd.is_running(|| { 
-                         //trace!("shutdown requested {} {}",heartbeat_rx.is_closed(), generator_rx.is_closed());
-                         heartbeat_rx.is_closed() && generator_rx.is_closed() && logger_tx.mark_closed()}) {
-        let mut count_down_items_per_tick = 3; //if too big we might hang
+    while cmd.is_running(|| i!(heartbeat_rx.is_closed()) && i!(generator_rx.is_closed()) && i!(logger_tx.mark_closed()) ) {
+        let mut count_down_items_per_tick = heartbeat_rx.capacity()/2;
         let _clean =  await_for_all!(cmd.wait_vacant(&mut logger_tx, 1),
                                      cmd.wait_avail(&mut heartbeat_rx, 1),
-                                     cmd.wait_avail(&mut generator_rx, count_down_items_per_tick)
+                                     wait_for_any!(
+                                                    cmd.wait_periodic(Duration::from_millis(100)),
+                                                    cmd.wait_avail(&mut generator_rx, count_down_items_per_tick)
+                                                )
                                   );
 
         if let Some(_h) = cmd.try_take(&mut heartbeat_rx) {

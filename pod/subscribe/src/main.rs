@@ -97,37 +97,35 @@ pub(crate) mod main_tests {
    use steady_state::graph_testing::{StageDirection, StageWaitFor};
    use crate::actor::worker::FizzBuzzMessage;
    use super::*;
-
+    
     #[test]
     fn graph_test() -> Result<(), Box<dyn std::error::Error>> {
          // this is our special test graph without any barrier so we can shut down from the main thread.
         let mut graph = GraphBuilder::for_testing()
-                                    .with_telemetry_metric_features(true)
+                                    //.with_telemetry_metric_features(true)
+                                    //.with_telemtry_production_rate_ms(100)
                                     .build(MainArg::default());
 
         build_graph(&mut graph);
         graph.start();
-
-
-
+                
         let stage_manager = graph.stage_manager();
         let now = Instant::now();
          //NOTE: we send 1 generated message and THEN the heartbeat to release it
-        stage_manager.actor_perform("aeron",
-              StageDirection::EchoAt(1, StreamSessionMessage::wrap(2,now,now,&[0, 0, 0, 0, 0, 0, 0, 42])) // Generator simulation
+         //      we also make sure the session_id matches and make up an arrival time of now
+        stage_manager.actor_perform("aeron",  
+              StageDirection::EchoAt(1, StreamSessionMessage::wrap(41,now,now,&[0, 0, 0, 0, 0, 0, 0, 15])) // Generator simulation
         )?;
         stage_manager.actor_perform("aeron",
-              StageDirection::EchoAt(0, StreamSessionMessage::wrap(1,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])) // Heartbeat simulation
+              StageDirection::EchoAt(0, StreamSessionMessage::wrap(40,now,now,&[0, 0, 0, 0, 0, 0, 0, 0])) // Heartbeat simulation
         )?;
+        stage_manager.actor_perform("logger",
+               StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(60))
+        )?;
+;         
+        stage_manager.final_bow();
 
-        error!("eeeeeeeeeeeeeee");
-          stage_manager.actor_perform("logger",
-               StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(30))
-           )?;
- error!("xxxxxxxxxxxxxxxxx");         
-         stage_manager.final_bow();
-        error!("ssssssssssssss");
-         graph.request_shutdown();
-         graph.block_until_stopped(Duration::from_secs(1))
+        graph.request_shutdown();
+        graph.block_until_stopped(Duration::from_secs(2))
     }
 }

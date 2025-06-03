@@ -48,7 +48,7 @@ async fn internal_behavior<T: SteadyCommander>(
                 cmd.wait_vacant(&mut tx_generator, 1)
             )
         );
-
+        
         if cmd.vacant_units(&mut tx_heartbeat) > 0 {
             if let Some(bytes) = cmd.try_take(&mut rx_heartbeat) {
                 let byte_array: [u8; 8] = bytes
