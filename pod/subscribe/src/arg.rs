@@ -13,7 +13,7 @@ pub enum CommType {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub(crate) struct MainArg {
     /// Rate in microseconds (1000 per ms)
-    #[arg(short = 'r', long = "rate", default_value = "100")]
+    #[arg(short = 'r', long = "rate", default_value = "20")]
     pub(crate) rate_ms: u64,
 
     /// Number of beats
