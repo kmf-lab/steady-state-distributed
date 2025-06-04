@@ -39,11 +39,11 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut logger_tx = logger.lock().await;
 
     while cmd.is_running(|| i!(heartbeat_rx.is_closed()) && i!(generator_rx.is_closed()) && i!(logger_tx.mark_closed()) ) {
-        let mut count_down_items_per_tick = heartbeat_rx.capacity()/2;
+        let mut count_down_items_per_tick = generator_rx.capacity()/8;
         let _clean =  await_for_all!(cmd.wait_vacant(&mut logger_tx, 1),
                                      cmd.wait_avail(&mut heartbeat_rx, 1),
                                      wait_for_any!(
-                                                    cmd.wait_periodic(Duration::from_millis(100)),
+                                                    cmd.wait_periodic(Duration::from_millis(20)),
                                                     cmd.wait_avail(&mut generator_rx, count_down_items_per_tick)
                                                 )
                                   );

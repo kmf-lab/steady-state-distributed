@@ -92,8 +92,7 @@ fn build_graph(graph: &mut Graph) {
 
 #[cfg(test)]
 pub(crate) mod subscribe_main_tests {
-    use std::thread::sleep;
-    use std::time::Duration;
+   use std::time::Duration;
    use steady_state::*;
    use steady_state::graph_testing::{StageDirection, StageWaitFor};
    use crate::actor::worker::FizzBuzzMessage;

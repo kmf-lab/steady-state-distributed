@@ -21,13 +21,13 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
     let mut generated = generated.lock().await;
 
     const EXPECTED_UNITS_PER_BEAT:u64 = 3; //MUST MATCH THE CLIENT EXPECTATIONS
-    while cmd.is_running(|| /*state.value >= beats*EXPECTED_UNITS_PER_BEAT &&*/ generated.mark_closed() ) {
+    while cmd.is_running(||  generated.mark_closed() ) {
          //this will await until we have room for this one.
          if cmd.send_async(&mut generated, state.value, SendSaturation::AwaitForRoom).await.is_sent() {
              state.value += 1;
              if beats*EXPECTED_UNITS_PER_BEAT == state.value {
                  assert!(cmd.send_async(&mut generated, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
-                 info!("request graph stop");
+                 error!("Generator is done");
                  cmd.request_shutdown().await;
              }
          }
@@ -38,7 +38,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u
 /// Here we test the internal behavior of this actor
 #[cfg(test)]
 pub(crate) mod generator_tests {
-    use std::thread::sleep;
     use steady_state::*;
     use crate::arg::MainArg;
     use super::*;

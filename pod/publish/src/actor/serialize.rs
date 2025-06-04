@@ -49,7 +49,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 
 #[cfg(test)]
 pub(crate) mod serialize_tests {
-    pub use std::thread::sleep;
     use steady_state::*;
     use crate::arg::MainArg;
     use super::*;

@@ -25,7 +25,7 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut state = state.lock(|| HeartbeatState{ count: 0}).await;
     let mut heartbeat_tx = heartbeat_tx.lock().await;
     //loop is_running until shutdown signal then we call the closure which closes our outgoing Tx
-    while cmd.is_running(|| /*state.count >= beats &&*/ heartbeat_tx.mark_closed()) {
+    while cmd.is_running(|| heartbeat_tx.mark_closed()) {
         //await here until both of these are true
         await_for_all!(cmd.wait_periodic(rate),
                        cmd.wait_vacant(&mut heartbeat_tx, 1));
@@ -34,8 +34,10 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
         state.count += 1;
         if beats == state.count {
             assert!(cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
-            info!("request graph stop");
-            cmd.request_shutdown().await; //TODO: rename to request_shutdown
+            error!("Heartbet is done");
+            //TODO: this is a hack to see if our shutdown is not waiting for the publsh to finish.
+            cmd.wait(Duration::from_secs(10));
+            cmd.request_shutdown().await;
         }
     }
     Ok(())
@@ -44,7 +46,6 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
 /// Here we test the internal behavior of this actor
 #[cfg(test)]
 pub(crate) mod heartbeat_tests {
-    pub use std::thread::sleep;
     use steady_state::*;
     use crate::arg::MainArg;
     use super::*;

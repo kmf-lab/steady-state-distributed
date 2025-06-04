@@ -34,7 +34,7 @@ pub(crate) mod logger_tests {
     fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
         use steady_logger::*;
 
-        initialize_with_level(LogLevel::Trace).expect("Failed to initialize test logger");
+        initialize_with_level(LogLevel::Info).expect("Failed to initialize test logger");
         let _guard = start_log_capture();
 
         let mut graph = GraphBuilder::for_testing().build(());
@@ -51,6 +51,7 @@ pub(crate) mod logger_tests {
         graph.block_until_stopped(Duration::from_secs(1))?;
 
         assert_in_logs!(vec!["Msg Fizz"]);
+
         Ok(())
     }
 }
