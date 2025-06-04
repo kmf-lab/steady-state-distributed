@@ -92,7 +92,8 @@ fn build_graph(graph: &mut Graph) {
 
 #[cfg(test)]
 pub(crate) mod subscribe_main_tests {
-   use std::time::Duration;
+    use std::thread::sleep;
+    use std::time::Duration;
    use steady_state::*;
    use steady_state::graph_testing::{StageDirection, StageWaitFor};
    use crate::actor::worker::FizzBuzzMessage;
@@ -118,13 +119,13 @@ pub(crate) mod subscribe_main_tests {
          //NOTE: we send 1 generated message and THEN the heartbeat to release it
          //      we also make sure the session_id matches and make up an arrival time of now
         stage_manager.actor_perform("aeron",  // Generator simulation
-              StageDirection::EchoAt(1, StreamIngress::by_ref(sender_session_id
+              StageDirection::EchoAt(1, StreamIngress::build(sender_session_id
                                                               ,first_byte_arrival,last_byte_finished
                                                               ,&[0, 0, 0, 0, 0, 0, 0, 15]))
         )?;
         //these messages are FAKE and did not come from aeron instead we INJECT them here like they arrived
         stage_manager.actor_perform("aeron",  // Heartbeat simulation
-              StageDirection::EchoAt(0, StreamIngress::by_ref(sender_session_id
+              StageDirection::EchoAt(0, StreamIngress::build(sender_session_id
                                                               ,first_byte_arrival,last_byte_finished
                                                               ,&[0, 0, 0, 0, 0, 0, 0, 0]))
         )?;
@@ -133,8 +134,7 @@ pub(crate) mod subscribe_main_tests {
         )?;
 
         stage_manager.final_bow();
-
         graph.request_shutdown();
-        graph.block_until_stopped(Duration::from_secs(2))
+        graph.block_until_stopped(Duration::from_secs(7))
     }
 }

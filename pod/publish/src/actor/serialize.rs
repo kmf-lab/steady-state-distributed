@@ -4,7 +4,7 @@ use steady_state::*;
 pub(crate) async fn run(context: SteadyContext
                   , heartbeat: SteadyRx<u64>
                   , generator: SteadyRx<u64>
-                  , output: SteadyStreamTxBundle<StreamSimpleMessage,2>) -> Result<(),Box<dyn Error>> {
+                  , output: SteadyStreamTxBundle<StreamEgress,2>) -> Result<(),Box<dyn Error>> {
     let cmd = context.into_monitor([&heartbeat, &generator],output.control_meta_data());
     internal_behavior(cmd, heartbeat, generator, output).await
 }
@@ -12,7 +12,7 @@ pub(crate) async fn run(context: SteadyContext
 async fn internal_behavior<C: SteadyCommander>(mut cmd: C
                                                , heartbeat: SteadyRx<u64>
                                                , generator: SteadyRx<u64>
-                                               , output: SteadyStreamTxBundle<StreamSimpleMessage,2>) -> Result<(),Box<dyn Error>> {
+                                               , output: SteadyStreamTxBundle<StreamEgress,2>) -> Result<(),Box<dyn Error>> {
     let mut rx_heartbeat = heartbeat.lock().await;
     let mut rx_generator = generator.lock().await;
     let mut output = output.lock().await; //private vec of guards of streams

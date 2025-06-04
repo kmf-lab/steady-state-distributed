@@ -40,8 +40,7 @@ fn build_graph(graph: &mut Graph) {
 
     let (output_tx, output_rx) = channel_builder
         .with_capacity(6400)
-        .with_labels(&["output"], true) //TODO: problem this is abundle!!
-        .build_stream_bundle::<StreamSimpleMessage, 2>(1000);
+        .build_stream_bundle::<StreamEgress, 2>(1000);
 
     let (heartbeat_tx, heartbeat_rx) = channel_builder.build_channel();
     let (generator_tx, generator_rx) = channel_builder.build_channel();
@@ -112,9 +111,8 @@ pub(crate) mod publish_main_tests {
         stage_manager.actor_perform("generator", StageDirection::EchoAt(0, 15u64))?;
         stage_manager.actor_perform("heartbeat", StageDirection::Echo(0u64))?;
         //in this test we do NOT send anything to aeron instead we confirm what we WOULD have sent matches our expectations.
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0, StreamEgress::by_box(&[0u8,0,0,0,0,0,0,0]), Duration::from_secs(4)))?;
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1, StreamEgress::by_box(&[0u8,0,0,0,0,0,0,15]), Duration::from_secs(4)))?;
-
+        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0, StreamEgress::build(&[0u8,0,0,0,0,0,0,0]), Duration::from_secs(4)))?;
+        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1, StreamEgress::build(&[0u8,0,0,0,0,0,0,15]), Duration::from_secs(4)))?;
         stage_manager.final_bow();
         
         graph.request_shutdown();
