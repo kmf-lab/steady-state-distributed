@@ -22,14 +22,16 @@ impl FizzBuzzMessage {
     }
 }
 
-pub async fn run(context: SteadyContext
+pub async fn run(actor: SteadyActorShadow
                  , heartbeat: SteadyRx<u64> //the type can be any struct or primitive or enum...
                  , generator: SteadyRx<u64>
                  , logger: SteadyTx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(context.into_monitor([&heartbeat, &generator], [&logger]), heartbeat, generator, logger).await
+    internal_behavior(actor.into_spotlight([&heartbeat, &generator], [&logger]), heartbeat, generator, logger).await
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C
+const EXPECTED_UNITS_PER_BEAT:usize = 50000; //MUST MATCH THE SERVER EXPECTATIONS
+
+async fn internal_behavior<A: SteadyActor>(mut actor: A
                                                , heartbeat: SteadyRx<u64> //the type can be any struct or primitive or enum...
                                                , generator: SteadyRx<u64>
                                                , logger: SteadyTx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
@@ -38,24 +40,26 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut generator_rx = generator.lock().await;
     let mut logger_tx = logger.lock().await;
 
-    while cmd.is_running(|| i!(heartbeat_rx.is_closed()) && i!(generator_rx.is_closed()) && i!(logger_tx.mark_closed()) ) {
-        let mut count_down_items_per_tick = generator_rx.capacity()/8;
-        let _clean =  await_for_all!(cmd.wait_vacant(&mut logger_tx, 1),
-                                     cmd.wait_avail(&mut heartbeat_rx, 1),
+
+    let mut count_down_items_per_tick = 0;
+    while actor.is_running(|| i!(heartbeat_rx.is_closed()) && i!(generator_rx.is_closed()) && i!(logger_tx.mark_closed()) ) {
+        count_down_items_per_tick += EXPECTED_UNITS_PER_BEAT;
+        let _clean =  await_for_all!(actor.wait_vacant(&mut logger_tx, EXPECTED_UNITS_PER_BEAT),
+                                     actor.wait_avail(&mut heartbeat_rx, 1),
                                      wait_for_any!(
-                                                    cmd.wait_periodic(Duration::from_millis(20)),
-                                                    cmd.wait_avail(&mut generator_rx, count_down_items_per_tick)
+                                                    actor.wait_periodic(Duration::from_millis(500)),
+                                                    actor.wait_avail(&mut generator_rx, EXPECTED_UNITS_PER_BEAT)
                                                 )
                                   );
 
-        if let Some(_h) = cmd.try_take(&mut heartbeat_rx) {
+        if let Some(_h) = actor.try_take(&mut heartbeat_rx) {
             //for each beat we empty the generated data
             //try to take count if possible, but no more, do NOT use take_into_iterator as it consumes all it sees.
-            while let Some(item) = cmd.try_take(&mut generator_rx)  {
+            while let Some(item) = actor.try_take(&mut generator_rx)  {
                 //note: SendSaturation tells the async call to just wait if the outgoing channel
                 //      is full. Another popular choice is Warn so it logs if it gets filled.
-                let result = cmd.send_async(&mut logger_tx, FizzBuzzMessage::new(item)
-                               , SendSaturation::AwaitForRoom).await;
+                let result = actor.send_async(&mut logger_tx, FizzBuzzMessage::new(item)
+                                              , SendSaturation::AwaitForRoom).await;
                 if let SendOutcome::Blocked(_d) = result {
                     //note: we already consumed d so it is lost but we know we are shutting down now.
                     break;

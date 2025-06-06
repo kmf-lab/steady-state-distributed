@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// The aqueduct is included unconditionally, but in testing mode, its behavior is assumed to be mocked or isolated.
 fn build_graph(graph: &mut Graph) {
     let channel_builder = graph.channel_builder()
+        .with_capacity(100_000)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
@@ -39,7 +40,6 @@ fn build_graph(graph: &mut Graph) {
         .with_filled_percentile(Percentile::p80());
 
     let (input_tx, input_rx) = channel_builder
-        .with_capacity(6400)
         .with_labels(&["input"], true)
         .build_stream_bundle::<StreamIngress, 2>(1000);
 

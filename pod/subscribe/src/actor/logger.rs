@@ -1,22 +1,22 @@
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
-pub async fn run(context: SteadyContext, fizz_buzz_rx: SteadyRx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([&fizz_buzz_rx], []);
-    if cmd.use_internal_behavior {
-        internal_behavior(cmd, fizz_buzz_rx).await
+pub async fn run(actor: SteadyActorShadow, fizz_buzz_rx: SteadyRx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
+    let actor = actor.into_spotlight([&fizz_buzz_rx], []);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, fizz_buzz_rx).await
     } else {
-        cmd.simulated_behavior(vec!(&fizz_buzz_rx)).await
+        actor.simulated_behavior(vec!(&fizz_buzz_rx)).await
     }
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C, rx: SteadyRx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
+async fn internal_behavior<A: SteadyActor>(mut actor: A, rx: SteadyRx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
     let mut rx = rx.lock().await;
     let mut count = 0;
-    while cmd.is_running(|| i!(rx.is_closed_and_empty())) {
-        await_for_all!(cmd.wait_avail(&mut rx, 1));
+    while actor.is_running(|| i!(rx.is_closed_and_empty())) {
+        await_for_all!(actor.wait_avail(&mut rx, 1));
         count += 1;
-        if let Some(msg) = cmd.try_take(&mut rx) {
+        if let Some(msg) = actor.try_take(&mut rx) {
             if count < 100 {
                 info!("Msg {:?}", msg );
             }

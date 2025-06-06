@@ -6,18 +6,18 @@ pub(crate) struct DeserializeState {
 }
 
 pub(crate) async fn run(
-    context: SteadyContext,
+    actor: SteadyActorShadow,
     input: SteadyStreamRxBundle<StreamIngress, 2>,
     heartbeat: SteadyTx<u64>,
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
 ) -> Result<(), Box<dyn Error>> {
-    let cmd = context.into_monitor(input.control_meta_data(), [&heartbeat, &generator]);
-    internal_behavior(cmd, input, heartbeat, generator, state).await
+    let actor = actor.into_spotlight(input.control_meta_data(), [&heartbeat, &generator]);
+    internal_behavior(actor, input, heartbeat, generator, state).await
 }
 
-async fn internal_behavior<T: SteadyCommander>(
-    mut cmd: T,
+async fn internal_behavior<A: SteadyActor>(
+    mut actor: A,
     input: SteadyStreamRxBundle<StreamIngress, 2>,
     heartbeat: SteadyTx<u64>,
     generator: SteadyTx<u64>,
@@ -32,7 +32,7 @@ async fn internal_behavior<T: SteadyCommander>(
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
 
-    while cmd.is_running(|| {
+    while actor.is_running(|| {
                rx_heartbeat.is_empty()
             && rx_generator.is_empty()
             && tx_generator.mark_closed()
@@ -40,17 +40,17 @@ async fn internal_behavior<T: SteadyCommander>(
     }) {
         await_for_any!(
             wait_for_all!(
-                cmd.wait_avail(&mut rx_heartbeat, 1),
-                cmd.wait_vacant(&mut tx_heartbeat, 1)
+                actor.wait_avail(&mut rx_heartbeat, 1),
+                actor.wait_vacant(&mut tx_heartbeat, 1)
             ),
             wait_for_all!(
-                cmd.wait_avail(&mut rx_generator, 1),
-                cmd.wait_vacant(&mut tx_generator, 1)
+                actor.wait_avail(&mut rx_generator, 1),
+                actor.wait_vacant(&mut tx_generator, 1)
             )
         );
         
-        if cmd.vacant_units(&mut tx_heartbeat) > 0 {
-            if let Some(bytes) = cmd.try_take(&mut rx_heartbeat) {
+        if actor.vacant_units(&mut tx_heartbeat) > 0 {
+            if let Some(bytes) = actor.try_take(&mut rx_heartbeat) {
                 let byte_array: [u8; 8] = bytes
                     .1
                     .as_ref()
@@ -61,16 +61,16 @@ async fn internal_behavior<T: SteadyCommander>(
                 if beat == u64::MAX {
                     state.shutdown_count += 1;
                     if state.shutdown_count == 2 {
-                        cmd.request_shutdown().await;
+                        actor.request_shutdown().await;
                     }
                 } else {
-                    assert!(cmd.try_send(&mut tx_heartbeat, beat).is_sent());
+                    assert!(actor.try_send(&mut tx_heartbeat, beat).is_sent());
                 }
             }
         }
 
-        if cmd.vacant_units(&mut tx_generator) > 0 {
-            if let Some(bytes) = cmd.try_take(&mut rx_generator) {
+        if actor.vacant_units(&mut tx_generator) > 0 {
+            if let Some(bytes) = actor.try_take(&mut rx_generator) {
                 let byte_array: [u8; 8] = bytes
                     .1
                     .as_ref()
@@ -80,10 +80,10 @@ async fn internal_behavior<T: SteadyCommander>(
                 if generated == u64::MAX {
                     state.shutdown_count += 1;
                     if state.shutdown_count == 2 {
-                        cmd.request_shutdown().await;
+                        actor.request_shutdown().await;
                     }
                 } else {
-                    assert!(cmd.try_send(&mut tx_generator, generated).is_sent());
+                    assert!(actor.try_send(&mut tx_generator, generated).is_sent());
                 }
             }
         }

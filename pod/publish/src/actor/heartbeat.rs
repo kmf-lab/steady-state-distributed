@@ -6,38 +6,37 @@ pub(crate) struct HeartbeatState {
 }
 
 /// this is the normal entry point for our actor in the graph using its normal implementation
-pub async fn run(context: SteadyContext, heartbeat_tx: SteadyTx<u64>, state: SteadyState<HeartbeatState>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([], [&heartbeat_tx]);
-    if cmd.use_internal_behavior {
-        internal_behavior(cmd, heartbeat_tx, state).await
+pub async fn run(actor: SteadyActorShadow, heartbeat_tx: SteadyTx<u64>, state: SteadyState<HeartbeatState>) -> Result<(),Box<dyn Error>> {
+    let actor = actor.into_spotlight([], [&heartbeat_tx]);
+    if actor.use_internal_behavior {
+        internal_behavior(actor, heartbeat_tx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&heartbeat_tx)).await
+        actor.simulated_behavior(vec!(&heartbeat_tx)).await
     }
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C
+async fn internal_behavior<A: SteadyActor>(mut actor: A
                                                , heartbeat_tx: SteadyTx<u64>
                                                , state: SteadyState<HeartbeatState> ) -> Result<(),Box<dyn Error>> {
-    let args = cmd.args::<crate::MainArg>().expect("unable to downcast");
+    let args = actor.args::<crate::MainArg>().expect("unable to downcast");
     let rate = Duration::from_micros(args.rate_ms);
     let beats = args.beats;
  //   drop(args); //could be done this way
     let mut state = state.lock(|| HeartbeatState{ count: 0}).await;
     let mut heartbeat_tx = heartbeat_tx.lock().await;
     //loop is_running until shutdown signal then we call the closure which closes our outgoing Tx
-    while cmd.is_running(|| heartbeat_tx.mark_closed()) {
+    while actor.is_running(|| heartbeat_tx.mark_closed()) {
         //await here until both of these are true
-        await_for_all!(cmd.wait_periodic(rate),
-                       cmd.wait_vacant(&mut heartbeat_tx, 1));
+        await_for_all!(actor.wait_periodic(rate),
+                       actor.wait_vacant(&mut heartbeat_tx, 1));
 
-        let _ = cmd.try_send(&mut heartbeat_tx, state.count);
-        state.count += 1;
-        if beats == state.count {
-            assert!(cmd.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
-            error!("Heartbet is done");
-            //TODO: this is a hack to see if our shutdown is not waiting for the publsh to finish.
-            cmd.wait(Duration::from_secs(10));
-            cmd.request_shutdown().await;
+        if actor.try_send(&mut heartbeat_tx, state.count).is_sent() {
+            state.count += 1;
+            if beats == state.count {
+                assert!(actor.send_async(&mut heartbeat_tx, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
+                error!("Heartbeat is done {}",state.count);
+                actor.request_shutdown().await;
+            }
         }
     }
     Ok(())

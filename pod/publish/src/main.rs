@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn build_graph(graph: &mut Graph) {
     let channel_builder = graph.channel_builder()
+        .with_capacity(100_000)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
@@ -39,7 +40,6 @@ fn build_graph(graph: &mut Graph) {
         .with_filled_percentile(Percentile::p80()); //is 128 need max of 100!!
 
     let (output_tx, output_rx) = channel_builder
-        .with_capacity(6400)
         .build_stream_bundle::<StreamEgress, 2>(1000);
 
     let (heartbeat_tx, heartbeat_rx) = channel_builder.build_channel();

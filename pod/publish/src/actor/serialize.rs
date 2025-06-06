@@ -1,15 +1,15 @@
 use std::error::Error;
 use steady_state::*;
 
-pub(crate) async fn run(context: SteadyContext
+pub(crate) async fn run(actor: SteadyActorShadow
                   , heartbeat: SteadyRx<u64>
                   , generator: SteadyRx<u64>
                   , output: SteadyStreamTxBundle<StreamEgress,2>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([&heartbeat, &generator],output.control_meta_data());
+    let cmd = actor.into_spotlight([&heartbeat, &generator],output.control_meta_data());
     internal_behavior(cmd, heartbeat, generator, output).await
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C
+async fn internal_behavior<A: SteadyActor>(mut actor: A
                                                , heartbeat: SteadyRx<u64>
                                                , generator: SteadyRx<u64>
                                                , output: SteadyStreamTxBundle<StreamEgress,2>) -> Result<(),Box<dyn Error>> {
@@ -21,24 +21,24 @@ async fn internal_behavior<C: SteadyCommander>(mut cmd: C
     let mut tx_heartbeat = output.remove(0);
     drop(output); //safety to ensure we do not use this again
 
-    while cmd.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed_and_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
+    while actor.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed_and_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
 
         await_for_any!(
-            wait_for_all!(cmd.wait_avail(&mut rx_heartbeat,1),cmd.wait_vacant(&mut tx_heartbeat,(1,8))),
-            wait_for_all!(cmd.wait_avail(&mut rx_generator,1),cmd.wait_vacant(&mut tx_generator,(1,8)))
+            wait_for_all!(actor.wait_avail(&mut rx_heartbeat,1),actor.wait_vacant(&mut tx_heartbeat,(1,8))),
+            wait_for_all!(actor.wait_avail(&mut rx_generator,1),actor.wait_vacant(&mut tx_generator,(1,8)))
         );
 
-        if cmd.vacant_units(&mut tx_heartbeat)>0 {
-            if let Some(value) = cmd.try_take(&mut rx_heartbeat) {
+        if actor.vacant_units(&mut tx_heartbeat)>0 {
+            if let Some(value) = actor.try_take(&mut rx_heartbeat) {
                 let bytes = value.to_be_bytes();
-                assert!(cmd.try_send(&mut tx_heartbeat, &bytes).is_sent());
+                assert!(actor.try_send(&mut tx_heartbeat, &bytes).is_sent());
             };
         }
 
-        while cmd.vacant_units(&mut tx_generator)>0 {
-            if let Some(value) = cmd.try_take(&mut rx_generator) {
+        while actor.vacant_units(&mut tx_generator)>0 {
+            if let Some(value) = actor.try_take(&mut rx_generator) {
                 let bytes = value.to_be_bytes();
-                assert!(cmd.try_send(&mut tx_generator, &bytes).is_sent());
+                assert!(actor.try_send(&mut tx_generator, &bytes).is_sent());
             } else { 
                 break;
             }

@@ -4,31 +4,32 @@ pub(crate) struct GeneratorState {
     pub(crate) value: u64
 }
 
-pub async fn run(context: SteadyContext, generated_tx: SteadyTx<u64>, state: SteadyState<GeneratorState>) -> Result<(),Box<dyn Error>> {
-    let cmd = context.into_monitor([], [&generated_tx]);
-    if cmd.use_internal_behavior {
-        internal_behavior(cmd, generated_tx, state).await
+const EXPECTED_UNITS_PER_BEAT:u64 = 50000; //MUST MATCH THE CLIENT EXPECTATIONS
+
+pub async fn run(actor: SteadyActorShadow, generated_tx: SteadyTx<u64>, state: SteadyState<GeneratorState>) -> Result<(),Box<dyn Error>> {
+    let actor = actor.into_spotlight([], [&generated_tx]); //rename to into_spotlight
+    if actor.use_internal_behavior {
+        internal_behavior(actor, generated_tx, state).await
     } else {
-        cmd.simulated_behavior(vec!(&generated_tx)).await
+        actor.simulated_behavior(vec!(&generated_tx)).await
     }
 }
 
-async fn internal_behavior<C: SteadyCommander>(mut cmd: C, generated: SteadyTx<u64>, state: SteadyState<GeneratorState> ) -> Result<(),Box<dyn Error>> {
-    let args = cmd.args::<crate::MainArg>().expect("unable to downcast");
+async fn internal_behavior<A: SteadyActor>(mut actor: A, generated: SteadyTx<u64>, state: SteadyState<GeneratorState> ) -> Result<(),Box<dyn Error>> {
+    let args = actor.args::<crate::MainArg>().expect("unable to downcast");
     let beats = args.beats;
     
     let mut state = state.lock(|| GeneratorState {value: 0}).await;
     let mut generated = generated.lock().await;
 
-    const EXPECTED_UNITS_PER_BEAT:u64 = 3; //MUST MATCH THE CLIENT EXPECTATIONS
-    while cmd.is_running(||  generated.mark_closed() ) {
+    while actor.is_running(||  generated.mark_closed() ) {
          //this will await until we have room for this one.
-         if cmd.send_async(&mut generated, state.value, SendSaturation::AwaitForRoom).await.is_sent() {
+         if actor.send_async(&mut generated, state.value, SendSaturation::AwaitForRoom).await.is_sent() {
              state.value += 1;
              if beats*EXPECTED_UNITS_PER_BEAT == state.value {
-                 assert!(cmd.send_async(&mut generated, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
-                 error!("Generator is done");
-                 cmd.request_shutdown().await;
+                 assert!(actor.send_async(&mut generated, u64::MAX, SendSaturation::AwaitForRoom).await.is_sent());
+                 error!("Generator is done {}",state.value);
+                 actor.request_shutdown().await;
              }
          }
     }

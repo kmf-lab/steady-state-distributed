@@ -13,11 +13,11 @@ pub enum CommType {
 #[derive(Parser, Debug, PartialEq, Clone)]
 pub(crate) struct MainArg {
     /// Rate in microseconds (1000 per ms)
-    #[arg(short = 'r', long = "rate", default_value = "10")]
+    #[arg(short = 'r', long = "rate", default_value = "40")]
     pub(crate) rate_ms: u64,
 
     /// Number of beats
-    #[arg(short = 'b', long = "beats", default_value = "20000")]
+    #[arg(short = 'b', long = "beats", default_value = "10000")]
     pub(crate) beats: u64,
 
     /// Communication type (ipc or udp)
@@ -36,8 +36,8 @@ pub(crate) struct MainArg {
 impl Default for MainArg {
     fn default() -> Self {
         MainArg {
-            rate_ms: 10,
-            beats: 20000,
+            rate_ms: 40,
+            beats: 10000,
             comm_type: CommType::Ipc,
             ip: None,
             port: None,
