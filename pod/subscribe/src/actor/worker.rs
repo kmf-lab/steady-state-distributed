@@ -83,9 +83,10 @@ pub(crate) mod worker_tests {
     #[test]
     fn test_worker() -> Result<(),Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
-        let (generate_tx, generate_rx) = graph.channel_builder().build();
-        let (heartbeat_tx, heartbeat_rx) = graph.channel_builder().build();
-        let (logger_tx, logger_rx) = graph.channel_builder().build::<FizzBuzzMessage>();
+        let channel_builder = graph.channel_builder().with_capacity(200_000);
+        let (generate_tx, generate_rx) = channel_builder.build();
+        let (heartbeat_tx, heartbeat_rx) = channel_builder.build();
+        let (logger_tx, logger_rx) = channel_builder.build::<FizzBuzzMessage>();
 
         graph.actor_builder().with_name("UnitTest")
              .build(move |context| internal_behavior(context
