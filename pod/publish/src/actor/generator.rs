@@ -4,7 +4,7 @@ pub(crate) struct GeneratorState {
     pub(crate) value: u64
 }
 
-const EXPECTED_UNITS_PER_BEAT:u64 = 50000; //MUST MATCH THE CLIENT EXPECTATIONS
+const EXPECTED_UNITS_PER_BEAT:u64 = 800_000; //MUST MATCH THE CLIENT EXPECTATIONS
 
 pub async fn run(actor: SteadyActorShadow, generated_tx: SteadyTx<u64>, state: SteadyState<GeneratorState>) -> Result<(),Box<dyn Error>> {
     let actor = actor.into_spotlight([], [&generated_tx]); //rename to into_spotlight

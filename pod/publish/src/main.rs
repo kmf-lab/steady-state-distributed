@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn build_graph(graph: &mut Graph) {
     let channel_builder = graph.channel_builder()
-        .with_capacity(100_000)
+        .with_capacity(2_000_000)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
@@ -64,11 +64,11 @@ fn build_graph(graph: &mut Graph) {
                , SoloAct);
 
     let aeron_channel = AeronConfig::new()
-        //.with_media_type(MediaType::Ipc)
-        // .use_ipc()
+       // .with_media_type(MediaType::Ipc)
+       // .use_ipc()
 
-        .with_media_type(MediaType::Udp)
-        .with_term_length((1024 * 1024 * 4) as usize)
+        .with_media_type(MediaType::Udp) //large term for greater volume
+        .with_term_length((1024 * 1024 * 64) as usize)
         .use_point_to_point(Endpoint {
             ip: "127.0.0.1".parse().expect("Invalid IP address"),
             port: 40456,
@@ -84,6 +84,11 @@ fn build_graph(graph: &mut Graph) {
     //     }, "eth0") // Specify network interface
     //     .build();
 
+
+
+    error!("publish to: {:?}",aeron_channel.cstring());
+
+    
     output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel, 40)
                              , &mut actor_builder.with_name("publish")
                              , SoloAct

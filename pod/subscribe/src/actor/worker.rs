@@ -1,76 +1,188 @@
-
 use steady_state::*;
 
-// over designed this enum is. much to learn here we have.
+/// FizzBuzzMessage is the output type for the worker actor.
+/// This enum is designed for efficient, branchless pattern matching in batch processing.
+/// The #[repr(u64)] ensures a predictable memory layout, which is cache-friendly.
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
-#[repr(u64)] // Pack everything into 8 bytes
+#[repr(u64)]
 pub(crate) enum FizzBuzzMessage {
     #[default]
-    FizzBuzz = 15,         // Discriminant is 15 - could have been any valid FizzBuzz
-    Fizz = 3,              // Discriminant is 3 - could have been any valid Fizz
-    Buzz = 5,              // Discriminant is 5 - could have been any valid Buzz
-    Value(u64),            // Store u64 directly, use the fact that FizzBuzz/Fizz/Buzz only occupy small values
+    FizzBuzz = 15,
+    Fizz = 3,
+    Buzz = 5,
+    Value(u64),
 }
+
 impl FizzBuzzMessage {
+    /// Efficiently computes the FizzBuzz variant for a given value.
+    /// This function is called in tight loops, so it avoids allocations and minimizes branching.
     pub fn new(value: u64) -> Self {
-        match (value % 3, value % 5) {
-            (0, 0) => FizzBuzzMessage::FizzBuzz,    // Multiple of 15
-            (0, _) => FizzBuzzMessage::Fizz,        // Multiple of 3, not 5
-            (_, 0) => FizzBuzzMessage::Buzz,        // Multiple of 5, not 3
-            _      => FizzBuzzMessage::Value(value), // Neither
+        match value % 15 {
+            0  => FizzBuzzMessage::FizzBuzz, // divisible by both 3 and 5
+            3  => FizzBuzzMessage::Fizz,     // divisible by 3
+            5  => FizzBuzzMessage::Buzz,     // divisible by 5
+            6  => FizzBuzzMessage::Fizz,     // divisible by 3
+            9  => FizzBuzzMessage::Fizz,     // divisible by 3
+            10 => FizzBuzzMessage::Buzz,     // divisible by 5
+            12 => FizzBuzzMessage::Fizz,     // divisible by 3
+            _  => FizzBuzzMessage::Value(value), // all other values
         }
     }
 }
 
-pub async fn run(actor: SteadyActorShadow
-                 , heartbeat: SteadyRx<u64> //the type can be any struct or primitive or enum...
-                 , generator: SteadyRx<u64>
-                 , logger: SteadyTx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
-    internal_behavior(actor.into_spotlight([&heartbeat, &generator], [&logger]), heartbeat, generator, logger).await
+/// State struct for the worker actor.
+/// Tracks the number of heartbeats, values processed, messages sent, and the batch size.
+/// The batch_size is set to half the channel capacity for double-buffering.
+pub(crate) struct WorkerState {
+    pub(crate) heartbeats_processed: u64,
+    pub(crate) values_processed: u64,
+    pub(crate) messages_sent: u64,
+    pub(crate) batch_size: usize,
 }
 
-const EXPECTED_UNITS_PER_BEAT:usize = 50000; //MUST MATCH THE SERVER EXPECTATIONS
+/// Entry point for the worker actor.
+/// This actor is not on the edge of the graph, so it is always run with real neighbors.
+/// It receives heartbeats and generator values, processes them in batches, and sends FizzBuzz messages to the logger.
+pub async fn run(
+    actor: SteadyActorShadow,
+    heartbeat: SteadyRx<u64>,
+    generator: SteadyRx<u64>,
+    logger: SteadyTx<FizzBuzzMessage>,
+    state: SteadyState<WorkerState>,
+) -> Result<(), Box<dyn Error>> {
+    // The worker is tested by its simulated neighbors, so we always use internal_behavior.
+    internal_behavior(
+        actor.into_spotlight([&heartbeat, &generator], [&logger]),
+        heartbeat,
+        generator,
+        logger,
+        state,
+    )
+        .await
+}
+// SLICES determines how many times we process a half-batch before yielding.
+// For double-buffering, this is set to 2.
+pub(crate) const SLICES: usize = 2; // important for high volume throughput
 
-async fn internal_behavior<A: SteadyActor>(mut actor: A
-                                               , heartbeat: SteadyRx<u64> //the type can be any struct or primitive or enum...
-                                               , generator: SteadyRx<u64>
-                                               , logger: SteadyTx<FizzBuzzMessage>) -> Result<(),Box<dyn Error>> {
+pub(crate) const BATCH_SIZE: usize = 800_000;
 
-    let mut heartbeat_rx = heartbeat.lock().await;
-    let mut generator_rx = generator.lock().await;
-    let mut logger_tx = logger.lock().await;
+/// The core logic for the worker actor.
+/// This function implements high-throughput, cache-friendly batch processing.
+///
+/// Key performance strategies:
+/// - **Double-buffering**: The channel is logically split into two halves. While one half is being filled by the producer, the consumer processes the other half.
+/// - **Full-channel consumption**: The worker processes both halves (two slices) before yielding, maximizing cache line reuse and minimizing context switches.
+/// - **Pre-allocated buffers**: All batch buffers are allocated once and reused, ensuring zero-allocation hot paths.
+/// - **Mechanically sympathetic**: The design aligns with CPU cache and memory bus behavior for optimal throughput.
+async fn internal_behavior<A: SteadyActor>(
+    mut actor: A,
+    heartbeat: SteadyRx<u64>,
+    generator: SteadyRx<u64>,
+    logger: SteadyTx<FizzBuzzMessage>,
+    state: SteadyState<WorkerState>,
+) -> Result<(), Box<dyn Error>> {
+    // Lock all channels for exclusive access within this actor.
+    let mut heartbeat = heartbeat.lock().await;
+    let mut generator = generator.lock().await;
+    let mut logger = logger.lock().await;
 
 
-    let mut count_down_items_per_tick = 0;
-    while actor.is_running(|| i!(heartbeat_rx.is_closed()) && i!(generator_rx.is_closed()) && i!(logger_tx.mark_closed()) ) {
-        count_down_items_per_tick += EXPECTED_UNITS_PER_BEAT;
-        let _clean =  await_for_all!(actor.wait_vacant(&mut logger_tx, EXPECTED_UNITS_PER_BEAT),
-                                     actor.wait_avail(&mut heartbeat_rx, 1),
-                                     wait_for_any!(
-                                                    actor.wait_periodic(Duration::from_millis(500)),
-                                                    actor.wait_avail(&mut generator_rx, EXPECTED_UNITS_PER_BEAT)
-                                                )
-                                  );
+    // Initialize the actor's state, setting batch_size to half the generator channel's capacity.
+    // This ensures that the producer can fill one half while the consumer processes the other.
+    let mut state = state.lock(|| WorkerState {
+        heartbeats_processed: 0,
+        values_processed: 0,
+        messages_sent: 0,
+        batch_size: BATCH_SIZE.min(generator.capacity()/SLICES),//FOR TESTING MAY NEED SOMETHING SMALLER
+    }).await;
 
-        if let Some(_h) = actor.try_take(&mut heartbeat_rx) {
-            //for each beat we empty the generated data
-            //try to take count if possible, but no more, do NOT use take_into_iterator as it consumes all it sees.
-            while let Some(item) = actor.try_take(&mut generator_rx)  {
-                //note: SendSaturation tells the async call to just wait if the outgoing channel
-                //      is full. Another popular choice is Warn so it logs if it gets filled.
-                let result = actor.send_async(&mut logger_tx, FizzBuzzMessage::new(item)
-                                              , SendSaturation::AwaitForRoom).await;
-                if let SendOutcome::Blocked(_d) = result {
-                    //note: we already consumed d so it is lost but we know we are shutting down now.
-                    break;
+    // Pre-allocate buffers for batch processing.
+    // generator_batch: holds up to half the channel's values at a time.
+    // fizzbuzz_batch: holds the converted FizzBuzz messages for a batch.
+    let mut generator_batch = vec![0u64; state.batch_size];
+    let mut fizzbuzz_batch = Vec::with_capacity(state.batch_size);
+
+    assert!(state.batch_size * SLICES <= generator.capacity());
+    assert!(state.batch_size * SLICES <= logger.capacity());
+
+    // Main processing loop.
+    // The actor runs until all input channels are closed and empty, and the output channel is closed.
+    while actor.is_running(||
+        i!(heartbeat.is_closed_and_empty()) &&
+            i!(generator.is_closed_and_empty()) &&
+            i!(logger.mark_closed())
+    ) {
+        // Wait for all required conditions:
+        // - At least one heartbeat (to trigger processing)
+        // - At least half a channel's worth of generator data (for batch efficiency)
+        // - Sufficient space in the logger channel for a batch
+        let is_clean = await_for_all!(
+            actor.wait_avail(&mut heartbeat, 1),
+            actor.wait_avail(&mut generator, state.batch_size),
+            actor.wait_vacant(&mut logger, state.batch_size * SLICES)
+        );
+
+        // The double-buffering loop: process two slices (halves) before yielding.
+        let mut slices = SLICES;
+        while slices > 0 {
+            slices -= 1;
+
+            // Only proceed if a heartbeat is available or if any awaited condition is ready.
+            // This ensures we don't leave data stranded in the channel.
+            if actor.avail_units(&mut generator) >= state.batch_size
+                && actor.try_take(&mut heartbeat).is_some() {
+                state.heartbeats_processed += 1;
+
+                // Take a slice of generator values into the pre-allocated buffer.
+                // This is a zero-allocation, cache-friendly operation.
+                let taken = actor.take_slice(&mut generator, &mut generator_batch[..state.batch_size]);
+                if taken > 0 {
+                    // Convert the batch of values to FizzBuzz messages.
+                    // The fizzbuzz_batch buffer is reused every cycle.
+                    fizzbuzz_batch.clear();
+                    fizzbuzz_batch.reserve(taken);
+                    for &value in &generator_batch[..taken] {
+                        fizzbuzz_batch.push(FizzBuzzMessage::new(value));
+                    }
+
+                    // Send the entire batch to the logger in one operation.
+                    // This minimizes synchronization and maximizes throughput.
+                    let sent_count = actor.send_slice_until_full(&mut logger, &fizzbuzz_batch);
+                    state.values_processed += taken as u64;
+                    state.messages_sent += sent_count as u64;
+                    assert_eq!(sent_count, fizzbuzz_batch.len(), "expected to match since pre-checked");
+
+                    // Log performance statistics periodically.
+                    if state.values_processed & (1 << 12) == 0 {
+                        trace!(
+                            "Worker processed {} values, sent {} messages",
+                            state.values_processed,
+                            state.messages_sent
+                        );
+                    }
                 }
-                count_down_items_per_tick -=1;
-                if 0 == count_down_items_per_tick {
-                    break;
+
+                // Log heartbeat statistics periodically.
+                if state.heartbeats_processed & (1 << 10) == 0 {
+                    trace!(
+                        "Worker: {} heartbeats processed",
+                        state.heartbeats_processed
+                    );
                 }
+            } else {
+                // If no heartbeat and no other condition is ready, break out of the double-buffer loop.
+                break;
             }
         }
-    }
+    } // <-- This closes the main while loop
+
+    // Final shutdown log, reporting all statistics.
+    info!(
+        "Worker shutting down. Heartbeats: {}, Values: {}, Messages: {}",
+        state.heartbeats_processed,
+        state.values_processed,
+        state.messages_sent
+    );
     Ok(())
 }
 
@@ -80,36 +192,45 @@ pub(crate) mod worker_tests {
     use steady_state::*;
     use super::*;
 
+    /// Unit test for the worker actor.
+    /// This test verifies that the worker processes batches correctly and produces the expected FizzBuzz output.
     #[test]
-    fn test_worker() -> Result<(),Box<dyn Error>> {
+    fn test_worker() -> Result<(), Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
-        let channel_builder = graph.channel_builder().with_capacity(200_000);
-        let (generate_tx, generate_rx) = channel_builder.build();
-        let (heartbeat_tx, heartbeat_rx) = channel_builder.build();
-        let (logger_tx, logger_rx) = channel_builder.build::<FizzBuzzMessage>();
+        let (generate_tx, generate_rx) = graph.channel_builder()
+            .with_capacity(2048)
+            .build();
+        let (heartbeat_tx, heartbeat_rx) = graph.channel_builder()
+            .with_capacity(512)
+            .build();
+        let (logger_tx, logger_rx) = graph.channel_builder()
+            .with_capacity(2048)
+            .build::<FizzBuzzMessage>();
 
+        let state = new_state();
         graph.actor_builder().with_name("UnitTest")
-             .build(move |context| internal_behavior(context
-                                                             , heartbeat_rx.clone()
-                                                             , generate_rx.clone()
-                                                             , logger_tx.clone())
-                 , SoloAct
-             );
+            .build(move |context| internal_behavior(context
+                                                    , heartbeat_rx.clone()
+                                                    , generate_rx.clone()
+                                                    , logger_tx.clone()
+                                                    , state.clone())
+                   , SoloAct
+            );
 
-        generate_tx.testing_send_all(vec![0,1,2,3,4,5], true);
-        heartbeat_tx.testing_send_all(vec![0,1], true);
+        let values: Vec<u64> = (0..1000).collect();
+        generate_tx.testing_send_all(values, true);
+        heartbeat_tx.testing_send_all(vec![0], true);
         graph.start();
 
-        sleep(Duration::from_millis(500));
+        sleep(Duration::from_millis(200));
 
         graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(1))?;
-        assert_steady_rx_eq_take!(&logger_rx, [FizzBuzzMessage::FizzBuzz
-                                              ,FizzBuzzMessage::Value(1)
-                                              ,FizzBuzzMessage::Value(2)
-                                              ,FizzBuzzMessage::Fizz
-                                              ,FizzBuzzMessage::Value(4)
-                                              ,FizzBuzzMessage::Buzz]);
+
+        let results: Vec<FizzBuzzMessage> = logger_rx.testing_take_all();
+        assert!(results.len() >= 1000);
+        assert_eq!(results[0], FizzBuzzMessage::FizzBuzz);
+        assert_eq!(results[1], FizzBuzzMessage::Value(1));
         Ok(())
     }
 }

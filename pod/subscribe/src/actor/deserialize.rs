@@ -1,8 +1,11 @@
 use std::error::Error;
 use steady_state::*;
+use crate::actor::worker;
+use crate::actor::worker::FizzBuzzMessage::FizzBuzz;
 
 pub(crate) struct DeserializeState {
     shutdown_count: i32,
+    batch_size: usize,
 }
 
 pub(crate) async fn run(
@@ -23,7 +26,6 @@ async fn internal_behavior<A: SteadyActor>(
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
 ) -> Result<(), Box<dyn Error>> {
-    let mut state = state.lock(|| DeserializeState { shutdown_count: 0 }).await;
 
     let mut input = input.lock().await;
     let mut rx_generator = input.remove(1); // Stream 1 for generator
@@ -31,6 +33,15 @@ async fn internal_behavior<A: SteadyActor>(
     drop(input); // Safety to prevent accidental reuse
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
+
+
+    let mut state = state.lock(|| DeserializeState {
+        shutdown_count: 0,
+        batch_size: worker::BATCH_SIZE.min(rx_generator.capacity() / worker::SLICES),
+    }).await;
+
+    //TODO; RETHINGK STTREAM BATCHING !!
+    //let mut generator_batch = vec![0u64; state.batch_size];
 
     while actor.is_running(|| {
                rx_heartbeat.is_empty()
@@ -69,7 +80,16 @@ async fn internal_behavior<A: SteadyActor>(
             }
         }
 
-        if actor.vacant_units(&mut tx_generator) > 0 {
+        //
+        // let gen_count = generator_batch.len()
+        //                         .min(actor.vacant_units(&mut tx_generator))
+        //                         .min(actor.avail_units(&mut rx_generator));
+        //
+        //TODO: missing needed method?
+        //let _ = actor.take_slice(&mut rx_generator, &mut generator_batch[0..gen_count]);
+
+
+        while actor.vacant_units(&mut tx_generator) > 0 {
             if let Some(bytes) = actor.try_take(&mut rx_generator) {
                 let byte_array: [u8; 8] = bytes
                     .1
@@ -85,9 +105,12 @@ async fn internal_behavior<A: SteadyActor>(
                 } else {
                     assert!(actor.try_send(&mut tx_generator, generated).is_sent());
                 }
+            } else {
+                break;
             }
         }
     }
+
     Ok(())
 }
 
