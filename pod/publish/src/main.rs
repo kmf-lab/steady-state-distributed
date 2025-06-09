@@ -1,5 +1,6 @@
 use std::env;
 use steady_state::*;
+use steady_state::distributed::aeron_channel_structs::{ControlMode, ReliableConfig};
 //bring into lib
 use arg::MainArg;
 mod arg;
@@ -66,7 +67,7 @@ fn build_graph(graph: &mut Graph) {
     let aeron_channel = AeronConfig::new()
        // .with_media_type(MediaType::Ipc)
        // .use_ipc()
-
+//        .with_control_mode(ControlMode::Dynamic)
         .with_media_type(MediaType::Udp) //large term for greater volume
         .with_term_length((1024 * 1024 * 64) as usize)
         .use_point_to_point(Endpoint {
