@@ -28,15 +28,20 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
             wait_for_all!(actor.wait_avail(&mut rx_generator,1),actor.wait_vacant(&mut tx_generator,(1,8)))
         );
 
-        if actor.vacant_units(&mut tx_heartbeat)>0 {
+        while actor.vacant_units(&mut tx_heartbeat)>0 {
             if let Some(value) = actor.try_take(&mut rx_heartbeat) {
                 let bytes = value.to_be_bytes();
                 assert!(actor.try_send(&mut tx_heartbeat, &bytes).is_sent());
             };
         }
 
+
+        //TOOD: take slice of numbers.
+
         while actor.vacant_units(&mut tx_generator)>0 {
             if let Some(value) = actor.try_take(&mut rx_generator) {
+
+                //TODO: missing slice method?
                 let bytes = value.to_be_bytes();
                 assert!(actor.try_send(&mut tx_generator, &bytes).is_sent());
             } else { 

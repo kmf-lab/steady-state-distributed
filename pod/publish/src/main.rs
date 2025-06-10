@@ -38,7 +38,7 @@ fn build_graph(graph: &mut Graph) {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
         .with_avg_rate()
-        .with_filled_percentile(Percentile::p80()); //is 128 need max of 100!!
+        .with_filled_percentile(Percentile::p25()); 
 
     let (output_tx, output_rx) = channel_builder
         .build_stream_bundle::<StreamEgress, 2>(1000);
@@ -69,7 +69,7 @@ fn build_graph(graph: &mut Graph) {
        // .use_ipc()
 //        .with_control_mode(ControlMode::Dynamic)
         .with_media_type(MediaType::Udp) //large term for greater volume
-        .with_term_length((1024 * 1024 * 64) as usize)
+        .with_term_length((1024 * 1024 * 32) as usize)
         .use_point_to_point(Endpoint {
             ip: "127.0.0.1".parse().expect("Invalid IP address"),
             port: 40456,

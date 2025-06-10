@@ -36,8 +36,7 @@ fn build_graph(graph: &mut Graph) {
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
-        .with_avg_rate()
-        .with_filled_percentile(Percentile::p80());
+        .with_avg_rate();
 
     let channel_builder_small= channel_builder_base.with_capacity(10_001);
     let channel_builder_large = channel_builder_base.with_capacity(2_000_000);
@@ -63,7 +62,7 @@ fn build_graph(graph: &mut Graph) {
         //.use_ipc()
         
         .with_media_type(MediaType::Udp) //large term for greater volume
-        .with_term_length((1024 * 1024 * 64) as usize)
+        .with_term_length((1024 * 1024 * 32) as usize)
         .use_point_to_point(Endpoint {
             ip: "127.0.0.1".parse().expect("Invalid IP address"),
             port: 40456,
