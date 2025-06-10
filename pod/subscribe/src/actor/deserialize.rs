@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::thread::yield_now;
 use steady_state::*;
 use crate::actor::worker;
 use crate::actor::worker::FizzBuzzMessage::FizzBuzz;
@@ -40,8 +41,7 @@ async fn internal_behavior<A: SteadyActor>(
         batch_size: worker::BATCH_SIZE.min(rx_generator.capacity() / worker::SLICES),
     }).await;
 
-    //TODO; RETHINGK STTREAM BATCHING !!
-    //let mut generator_batch = vec![0u64; state.batch_size];
+    let mut tx_batch = vec![0u64; state.batch_size];
 
     while actor.is_running(|| {
                rx_heartbeat.is_empty()
@@ -59,8 +59,11 @@ async fn internal_behavior<A: SteadyActor>(
                 actor.wait_vacant(&mut tx_generator, 1)
             )
         );
-        
-        if actor.vacant_units(&mut tx_heartbeat) > 0 {
+
+        let mut units_count = actor.vacant_units(&mut tx_heartbeat)
+                                 .min(actor.avail_units(&mut rx_heartbeat));
+
+        while units_count > 0 {
             if let Some(bytes) = actor.try_take(&mut rx_heartbeat) {
                 let byte_array: [u8; 8] = bytes
                     .1
@@ -78,37 +81,59 @@ async fn internal_behavior<A: SteadyActor>(
                     assert!(actor.try_send(&mut tx_heartbeat, beat).is_sent());
                 }
             }
+            units_count -= 1;
         }
 
-        //
-        // let gen_count = generator_batch.len()
+        // let gen_count = state.batch_size
         //                         .min(actor.vacant_units(&mut tx_generator))
         //                         .min(actor.avail_units(&mut rx_generator));
-        //
+
+
         //TODO: missing needed method?
         //let _ = actor.take_slice(&mut rx_generator, &mut generator_batch[0..gen_count]);
 
-
-        while actor.vacant_units(&mut tx_generator) > 0 {
-            if let Some(bytes) = actor.try_take(&mut rx_generator) {
-                let byte_array: [u8; 8] = bytes
-                    .1
-                    .as_ref()
-                    .try_into()
-                    .expect("Expected exactly 8 bytes");
-                let generated = u64::from_be_bytes(byte_array);
-                if generated == u64::MAX {
-                    state.shutdown_count += 1;
-                    if state.shutdown_count == 2 {
-                        actor.request_shutdown().await;
-                    }
-                } else {
-                    assert!(actor.try_send(&mut tx_generator, generated).is_sent());
-                }
-            } else {
+        loop {
+            let mut units_count =
+                           tx_batch.len()
+                          .min(actor.vacant_units(&mut tx_generator))
+                          .min(actor.avail_units(&mut rx_generator));
+            
+            if 0==units_count {
                 break;
             }
+            error!("deserialize count {}",units_count);
+            
+            let mut idx = 0;
+            while idx<units_count {
+                //TODO: this gave us the %work but is not making uCPU, notsure why..
+                actor.relay_stats_smartly(); // TODO: we are not getting cpu and we did nto get error on missing await
+
+                //TODO: missing slice take of bytes?
+                if let Some(bytes) = actor.try_take(&mut rx_generator) {
+                    let byte_array: [u8; 8] = bytes
+                        .1
+                        .as_ref()
+                        .try_into()
+                        .expect("Expected exactly 8 bytes");
+                    let generated = u64::from_be_bytes(byte_array);
+                    if generated == u64::MAX {
+                        state.shutdown_count += 1;
+                        if state.shutdown_count == 2 {
+                            actor.request_shutdown().await;
+                        }
+                    } else {
+                        tx_batch[idx] = generated;
+                    }
+                } else {
+                    break;
+                }
+                idx += 1;
+            }
+            assert_eq!(idx, actor.send_slice_until_full(&mut tx_generator, &mut tx_batch[0..idx]));
+            
+            error!("--------------------- done");
         }
+
     }
 
     Ok(())
