@@ -1,8 +1,6 @@
 use std::error::Error;
-use std::thread::yield_now;
 use steady_state::*;
 use crate::actor::worker;
-use crate::actor::worker::FizzBuzzMessage::FizzBuzz;
 
 pub(crate) struct DeserializeState {
     shutdown_count: i32,
@@ -84,16 +82,11 @@ async fn internal_behavior<A: SteadyActor>(
             units_count -= 1;
         }
 
-        // let gen_count = state.batch_size
-        //                         .min(actor.vacant_units(&mut tx_generator))
-        //                         .min(actor.avail_units(&mut rx_generator));
-
-
         //TODO: missing needed method?
         //let _ = actor.take_slice(&mut rx_generator, &mut generator_batch[0..gen_count]);
 
         loop {
-            let mut units_count =
+            let units_count =
                            tx_batch.len()
                           .min(actor.vacant_units(&mut tx_generator))
                           .min(actor.avail_units(&mut rx_generator));
@@ -101,7 +94,7 @@ async fn internal_behavior<A: SteadyActor>(
             if 0==units_count {
                 break;
             }
-            error!("deserialize count {}",units_count);
+            // trace!("deserialize count {}",units_count);
             
             let mut idx = 0;
             while idx<units_count {
@@ -131,7 +124,7 @@ async fn internal_behavior<A: SteadyActor>(
             }
             assert_eq!(idx, actor.send_slice_until_full(&mut tx_generator, &mut tx_batch[0..idx]));
             
-            error!("--------------------- done");
+            // trace!("--------------------- done");
         }
 
     }

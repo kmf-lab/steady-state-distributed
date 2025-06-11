@@ -32,19 +32,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn build_graph(graph: &mut Graph) {
-    let channel_builder = graph.channel_builder()
-        .with_capacity(2_000_000)
+    let channel_builder_base = graph.channel_builder()
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
         .with_avg_rate()
-        .with_filled_percentile(Percentile::p25()); 
+        .with_filled_percentile(Percentile::p25());
 
-    let (output_tx, output_rx) = channel_builder
+    let channel_builder_small= channel_builder_base.with_capacity(10_001);
+    let channel_builder_large = channel_builder_base.with_capacity(2_000_000);
+
+    let (output_tx, output_rx) = channel_builder_large
         .build_stream_bundle::<StreamEgress, 2>(1000);
 
-    let (heartbeat_tx, heartbeat_rx) = channel_builder.build_channel();
-    let (generator_tx, generator_rx) = channel_builder.build_channel();
+    let (heartbeat_tx, heartbeat_rx) = channel_builder_small.build_channel();
+    let (generator_tx, generator_rx) = channel_builder_large.build_channel();
 
     let actor_builder = graph.actor_builder()
         .with_load_avg()

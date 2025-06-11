@@ -21,6 +21,9 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
     let mut tx_heartbeat = output.remove(0);
     drop(output); //safety to ensure we do not use this again
 
+    let in_batch = rx_generator.capacity()/2;
+    let mut rx_batch = vec![0u64; in_batch];
+    
     while actor.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed_and_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
 
         await_for_any!(
@@ -28,25 +31,27 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
             wait_for_all!(actor.wait_avail(&mut rx_generator,1),actor.wait_vacant(&mut tx_generator,(1,8)))
         );
 
-        while actor.vacant_units(&mut tx_heartbeat)>0 {
+        let mut units_count = actor.vacant_units(&mut tx_heartbeat)
+                                         .min(actor.avail_units(&mut rx_heartbeat));
+        while units_count>0 {
             if let Some(value) = actor.try_take(&mut rx_heartbeat) {
                 let bytes = value.to_be_bytes();
                 assert!(actor.try_send(&mut tx_heartbeat, &bytes).is_sent());
             };
+            units_count -= 1;
         }
 
+        let units_count = rx_batch.len().min(actor.vacant_units(&mut tx_generator)
+                                                .min(actor.avail_units(&mut rx_generator)));
 
-        //TOOD: take slice of numbers.
-
-        while actor.vacant_units(&mut tx_generator)>0 {
-            if let Some(value) = actor.try_take(&mut rx_generator) {
-
-                //TODO: missing slice method?
-                let bytes = value.to_be_bytes();
-                assert!(actor.try_send(&mut tx_generator, &bytes).is_sent());
-            } else { 
-                break;
-            }
+        actor.take_slice(&mut rx_generator, &mut rx_batch[0..units_count]);
+                
+        let mut idx = 0;
+        while idx<units_count {        
+            //TODO: missing slice method?
+            let bytes = rx_batch[idx].to_be_bytes();
+            assert!(actor.try_send(&mut tx_generator, &bytes).is_sent());        
+            idx += 1;
         }
     }
     Ok(())
