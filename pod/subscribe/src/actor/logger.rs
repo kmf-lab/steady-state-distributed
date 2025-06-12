@@ -46,7 +46,7 @@ async fn internal_behavior<A: SteadyActor>(mut cmd: A, rx: SteadyRx<FizzBuzzMess
         let available = cmd.avail_units(&mut rx);
         if available > 0 {
             let batch_size = available.min(state.batch_size);
-            let taken = cmd.take_slice(&mut rx, &mut batch[..batch_size]);
+            let taken = cmd.take_slice(&mut rx, &mut batch[..batch_size]).item_count();
 
             if taken > 0 {
                 // Process entire batch efficiently

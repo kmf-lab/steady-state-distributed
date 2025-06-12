@@ -135,7 +135,8 @@ async fn internal_behavior<A: SteadyActor>(
 
                 // Take a slice of generator values into the pre-allocated buffer.
                 // This is a zero-allocation, cache-friendly operation.
-                let taken = actor.take_slice(&mut generator, &mut generator_batch[..state.batch_size]);
+                
+                let taken = actor.take_slice(&mut generator, &mut generator_batch[..state.batch_size]).item_count();
                 if taken > 0 {
                     // Convert the batch of values to FizzBuzz messages.
                     // The fizzbuzz_batch buffer is reused every cycle.
@@ -147,7 +148,7 @@ async fn internal_behavior<A: SteadyActor>(
 
                     // Send the entire batch to the logger in one operation.
                     // This minimizes synchronization and maximizes throughput.
-                    let sent_count = actor.send_slice_until_full(&mut logger, &fizzbuzz_batch);
+                    let sent_count = actor.send_slice(&mut logger, &fizzbuzz_batch).item_count();
                     state.values_processed += taken as u64;
                     state.messages_sent += sent_count as u64;
                     assert_eq!(sent_count, fizzbuzz_batch.len(), "expected to match since pre-checked");
@@ -198,13 +199,13 @@ pub(crate) mod worker_tests {
     fn test_worker() -> Result<(), Box<dyn Error>> {
         let mut graph = GraphBuilder::for_testing().build(());
         let (generate_tx, generate_rx) = graph.channel_builder()
-            .with_capacity(2048)
+            .with_capacity(BATCH_SIZE*2)
             .build();
         let (heartbeat_tx, heartbeat_rx) = graph.channel_builder()
-            .with_capacity(512)
+            .with_capacity(BATCH_SIZE*2)
             .build();
         let (logger_tx, logger_rx) = graph.channel_builder()
-            .with_capacity(2048)
+            .with_capacity(BATCH_SIZE*2)
             .build::<FizzBuzzMessage>();
 
         let state = new_state();
@@ -216,9 +217,15 @@ pub(crate) mod worker_tests {
                                                     , state.clone())
                    , SoloAct
             );
+        
 
-        let values: Vec<u64> = (0..1000).collect();
+        let mut values:Vec<u64> = Vec::with_capacity(BATCH_SIZE);
+        for i in 0..BATCH_SIZE {
+            values.push(i as u64);
+        }
         generate_tx.testing_send_all(values, true);
+        
+        
         heartbeat_tx.testing_send_all(vec![0], true);
         graph.start();
 
@@ -228,7 +235,7 @@ pub(crate) mod worker_tests {
         graph.block_until_stopped(Duration::from_secs(1))?;
 
         let results: Vec<FizzBuzzMessage> = logger_rx.testing_take_all();
-        assert!(results.len() >= 1000);
+        assert!(results.len() >= BATCH_SIZE);
         assert_eq!(results[0], FizzBuzzMessage::FizzBuzz);
         assert_eq!(results[1], FizzBuzzMessage::Value(1));
         Ok(())

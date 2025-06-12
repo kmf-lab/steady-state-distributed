@@ -14,7 +14,7 @@ pub(crate) async fn run(
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
 ) -> Result<(), Box<dyn Error>> {
-    let actor = actor.into_spotlight(input.control_meta_data(), [&heartbeat, &generator]);
+    let actor = actor.into_spotlight(input.payload_meta_data(), [&heartbeat, &generator]); // payload for aqueduct??
     internal_behavior(actor, input, heartbeat, generator, state).await
 }
 
@@ -122,7 +122,7 @@ async fn internal_behavior<A: SteadyActor>(
                 }
                 idx += 1;
             }
-            assert_eq!(idx, actor.send_slice_until_full(&mut tx_generator, &mut tx_batch[0..idx]));
+            assert_eq!(idx, actor.send_slice(&mut tx_generator, &mut tx_batch[0..idx]).item_count());
             
             // trace!("--------------------- done");
         }

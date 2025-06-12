@@ -5,7 +5,7 @@ pub(crate) async fn run(actor: SteadyActorShadow
                   , heartbeat: SteadyRx<u64>
                   , generator: SteadyRx<u64>
                   , output: SteadyStreamTxBundle<StreamEgress,2>) -> Result<(),Box<dyn Error>> {
-    let cmd = actor.into_spotlight([&heartbeat, &generator],output.control_meta_data());
+    let cmd = actor.into_spotlight([&heartbeat, &generator],output.payload_meta_data()); //must match the aqueduct??
     internal_behavior(cmd, heartbeat, generator, output).await
 }
 
