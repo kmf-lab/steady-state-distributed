@@ -33,11 +33,13 @@ async fn internal_behavior<A: SteadyActor>(
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
 
-
     let mut state = state.lock(|| DeserializeState {
         shutdown_count: 0,
         batch_size: worker::BATCH_SIZE.min(rx_generator.capacity() / worker::SLICES),
     }).await;
+
+    let mut control_batch = vec![StreamIngress::default(); state.batch_size];
+    let mut payload_batch          = vec![0u8; state.batch_size * 8];
 
     let mut tx_batch = vec![0u64; state.batch_size];
 
@@ -58,8 +60,28 @@ async fn internal_behavior<A: SteadyActor>(
             )
         );
 
-        let mut units_count = actor.vacant_units(&mut tx_heartbeat)
-                                 .min(actor.avail_units(&mut rx_heartbeat));
+        let mut units_count = state.batch_size
+                                   .min(actor.vacant_units(&mut tx_heartbeat))
+                                   .min(actor.avail_units(&mut rx_heartbeat));
+
+        actor.take_slice(&mut rx_heartbeat, ( &mut control_batch[0..units_count], &mut payload_batch[0..(units_count*8) ]  ));
+// TODO: conginue from here.
+
+        //perhaps not helpfull here since we are already limited by the network.
+        // let items = actor.send_slice_direct(&mut tx_heartbeat, &mut |t1, t2| {
+        //
+        //     let peek = actor.peek_slice(&mut rx_heartbeat);
+        //     peek.items_iter(); //each control?
+        //     peek.payload_iter();//every byte?
+        //
+        //
+        //     TxDone::Normal(0)
+        // }).item_count();
+
+
+        // actor.peek_slice(&mut rx_heartbeat).payload_iter()
+
+        // actor.advance_read_index(&mut rx_generator, (1,1));
 
         while units_count > 0 {
             if let Some(bytes) = actor.try_take(&mut rx_heartbeat) {
@@ -82,6 +104,9 @@ async fn internal_behavior<A: SteadyActor>(
             units_count -= 1;
         }
 
+
+
+
         //TODO: missing needed method?
         //let _ = actor.take_slice(&mut rx_generator, &mut generator_batch[0..gen_count]);
 
@@ -94,12 +119,17 @@ async fn internal_behavior<A: SteadyActor>(
             if 0==units_count {
                 break;
             }
+
+
+
+
             // trace!("deserialize count {}",units_count);
             
             let mut idx = 0;
             while idx<units_count {
                 //TODO: this gave us the %work but is not making uCPU, notsure why..
                 actor.relay_stats_smartly(); // TODO: we are not getting cpu and we did nto get error on missing await
+
 
                 //TODO: missing slice take of bytes?
                 if let Some(bytes) = actor.try_take(&mut rx_generator) {
