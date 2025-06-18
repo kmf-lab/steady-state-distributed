@@ -78,7 +78,7 @@ pub(crate) struct GeneratorState {
     pub(crate) total_generated: u64,
 }
 
-const EXPECTED_UNITS_PER_BEAT:u64 = 800_000; //MUST MATCH THE CLIENT EXPECTATIONS
+const EXPECTED_UNITS_PER_BEAT:u64 = 9_000_000; //MUST MATCH THE CLIENT EXPECTATIONS
 //TODO: integratethe rest.
 pub async fn run(actor: SteadyActorShadow, generated_tx: SteadyTx<u64>, state: SteadyState<GeneratorState>) -> Result<(),Box<dyn Error>> {
     let actor = actor.into_spotlight([], [&generated_tx]);
@@ -90,6 +90,8 @@ pub async fn run(actor: SteadyActorShadow, generated_tx: SteadyTx<u64>, state: S
 }
 
 async fn internal_behavior<A: SteadyActor>(mut actor: A, generated: SteadyTx<u64>, state: SteadyState<GeneratorState> ) -> Result<(),Box<dyn Error>> {
+    let args = actor.args::<crate::MainArg>().expect("unable to downcast");
+    let beats = args.beats;
 
     let mut generated = generated.lock().await;
 

@@ -69,10 +69,7 @@ async fn internal_behavior<A: SteadyActor>(mut cmd: A, rx: SteadyRx<FizzBuzzMess
 
                     state.messages_logged += 1;
 
-                    const TEN_MILLION_POWER2: u64 = 16_777_216; // 2^24
-                    const ONE_MILLION_POWER2: u64 = 1_048_576;  // 2^20
-
-                    if state.messages_logged<16 || (state.messages_logged & (TEN_MILLION_POWER2 - 1)) == 0 {
+                    if state.messages_logged<16 || (state.messages_logged & ( (1u64<<24) - 1)) == 0 {
                         info!(
                             "Logger: {} messages processed (F:{}, B:{}, FB:{}, V:{})",
                             state.messages_logged,
@@ -81,7 +78,7 @@ async fn internal_behavior<A: SteadyActor>(mut cmd: A, rx: SteadyRx<FizzBuzzMess
                             state.fizzbuzz_count,
                             state.value_count
                         );
-                                        } else if (state.messages_logged & (ONE_MILLION_POWER2 - 1)) == 0 {
+                                        } else if (state.messages_logged & ((1u64<<20) - 1)) == 0 {
                                             trace!(
                             "Logger: {} messages processed",
                             state.messages_logged

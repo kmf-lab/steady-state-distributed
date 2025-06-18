@@ -1,13 +1,16 @@
 use std::error::Error;
 use steady_state::*;
+use steady_state::distributed::distributed_stream::StreamControlItem;
 
 pub(crate) async fn run(actor: SteadyActorShadow
-                  , heartbeat: SteadyRx<u64>
-                  , generator: SteadyRx<u64>
-                  , output: SteadyStreamTxBundle<StreamEgress,2>) -> Result<(),Box<dyn Error>> {
+                        , heartbeat: SteadyRx<u64>
+                        , generator: SteadyRx<u64>
+                        , output: SteadyStreamTxBundle<StreamEgress,2>) -> Result<(),Box<dyn Error>> {
     let cmd = actor.into_spotlight([&heartbeat, &generator],output.payload_meta_data()); //must match the aqueduct??
     internal_behavior(cmd, heartbeat, generator, output).await
 }
+
+const MAX_GROUP: i32 = 8188;// for 64K blocks on look back,  1122 for 9K jumbo packets;
 
 async fn internal_behavior<A: SteadyActor>(mut actor: A
                                                , heartbeat: SteadyRx<u64>
@@ -22,37 +25,78 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A
     drop(output); //safety to ensure we do not use this again
 
     let in_batch = rx_generator.capacity()/2;
-    let mut rx_batch = vec![0u64; in_batch];
-    
-    while actor.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed_and_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
 
+    let mut rx_batch = vec![0u64; in_batch];
+
+    let mut input_batch          = vec![0u64; in_batch];
+    let mut control_batch = vec![StreamEgress::default(); in_batch];
+    let mut payload_batch          = vec![0u8; in_batch * 8];
+
+
+    while actor.is_running(|| rx_heartbeat.is_closed_and_empty() && rx_generator.is_closed_and_empty() && tx_generator.mark_closed() && tx_heartbeat.mark_closed()) {
         await_for_any!(
             wait_for_all!(actor.wait_avail(&mut rx_heartbeat,1),actor.wait_vacant(&mut tx_heartbeat,(1,8))),
             wait_for_all!(actor.wait_avail(&mut rx_generator,1),actor.wait_vacant(&mut tx_generator,(1,8)))
         );
 
-        let mut units_count = actor.vacant_units(&mut tx_heartbeat)
-                                         .min(actor.avail_units(&mut rx_heartbeat));
-        while units_count>0 {
-            if let Some(value) = actor.try_take(&mut rx_heartbeat) {
-                let bytes = value.to_be_bytes();
-                assert!(actor.try_send(&mut tx_heartbeat, &bytes).is_sent());
-            };
-            units_count -= 1;
+
+        let mut units_count = in_batch.min(actor.vacant_units(&mut tx_heartbeat))
+            .min(actor.avail_units(&mut rx_heartbeat));
+
+        // error!("send units {}", units_count);
+        let done = actor.take_slice(&mut rx_heartbeat, (&mut input_batch[0..units_count]));
+        let mut payload_idx = 0;
+        let mut control_idx = 0;
+        let mut group_count = 0;
+        for i in (0..done.item_count()) {
+            let bytes = input_batch[i].to_be_bytes();
+            payload_batch[payload_idx..(payload_idx + 8)].copy_from_slice(&bytes);
+            payload_idx += 8;
+            group_count += 1;
+            if 5 == group_count {
+                control_batch[control_idx] = StreamEgress::new(8 * group_count);
+                control_idx += 1;
+                group_count = 0;
+            }
+        }
+        if group_count > 0 {
+            control_batch[control_idx] = StreamEgress::new(8 * group_count);
+            control_idx += 1;
+        }
+        let result = actor.send_slice(&mut tx_heartbeat, (&control_batch[0..control_idx], &payload_batch[0..payload_idx]));
+
+
+
+        //////////////////////////////////////////////////////
+
+        let mut units_count = in_batch.min(actor.vacant_units(&mut tx_generator))
+            .min(actor.avail_units(&mut rx_generator));
+
+        // error!("send units {}", units_count);
+
+        let done = actor.take_slice(&mut rx_generator, (&mut input_batch[0..units_count]));
+        let mut payload_idx = 0;
+        let mut control_idx = 0;
+        let mut group_count = 0;
+        for i in (0..done.item_count()) {
+            let bytes = input_batch[i].to_be_bytes();
+            payload_batch[payload_idx..(payload_idx + 8)].copy_from_slice(&bytes);
+            payload_idx += 8;
+            group_count += 1;
+            if MAX_GROUP == group_count {
+                control_batch[control_idx] = StreamEgress::new(8 * group_count);
+                control_idx += 1;
+                group_count = 0;
+            }
+        }
+        if group_count > 0 {
+            control_batch[control_idx] = StreamEgress::new(8 * group_count);
+            control_idx += 1;
         }
 
-        let units_count = rx_batch.len().min(actor.vacant_units(&mut tx_generator)
-                                                .min(actor.avail_units(&mut rx_generator)));
+        let done = actor.send_slice(&mut tx_generator, (&control_batch[0..control_idx], &payload_batch[0..payload_idx]));
 
-        actor.take_slice(&mut rx_generator, &mut rx_batch[0..units_count]);
-                
-        let mut idx = 0;
-        while idx<units_count {        
-            //TODO: missing slice method?
-            let bytes = rx_batch[idx].to_be_bytes();
-            assert!(actor.try_send(&mut tx_generator, &bytes).is_sent());        
-            idx += 1;
-        }
+
     }
     Ok(())
 }

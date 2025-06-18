@@ -1,5 +1,6 @@
 use std::error::Error;
 use steady_state::*;
+use steady_state::distributed::distributed_stream::StreamControlItem; //TODO: make pub
 use crate::actor::worker;
 
 pub(crate) struct DeserializeState {
@@ -40,8 +41,7 @@ async fn internal_behavior<A: SteadyActor>(
 
     let mut control_batch = vec![StreamIngress::default(); state.batch_size];
     let mut payload_batch          = vec![0u8; state.batch_size * 8];
-
-    let mut tx_batch = vec![0u64; state.batch_size];
+    let mut output_batch          = vec![0u64; state.batch_size];
 
     while actor.is_running(|| {
                rx_heartbeat.is_empty()
@@ -64,33 +64,16 @@ async fn internal_behavior<A: SteadyActor>(
                                    .min(actor.vacant_units(&mut tx_heartbeat))
                                    .min(actor.avail_units(&mut rx_heartbeat));
 
-        actor.take_slice(&mut rx_heartbeat, ( &mut control_batch[0..units_count], &mut payload_batch[0..(units_count*8) ]  ));
-// TODO: conginue from here.
+        let done = actor.take_slice(&mut rx_heartbeat, ( &mut control_batch[0..units_count], &mut payload_batch[0.. ]  ));
 
-        //perhaps not helpfull here since we are already limited by the network.
-        // let items = actor.send_slice_direct(&mut tx_heartbeat, &mut |t1, t2| {
-        //
-        //     let peek = actor.peek_slice(&mut rx_heartbeat);
-        //     peek.items_iter(); //each control?
-        //     peek.payload_iter();//every byte?
-        //
-        //
-        //     TxDone::Normal(0)
-        // }).item_count();
-
-
-        // actor.peek_slice(&mut rx_heartbeat).payload_iter()
-
-        // actor.advance_read_index(&mut rx_generator, (1,1));
-
-        while units_count > 0 {
-            if let Some(bytes) = actor.try_take(&mut rx_heartbeat) {
-                let byte_array: [u8; 8] = bytes
-                    .1
-                    .as_ref()
-                    .try_into()
-                    .expect("Expected exactly 8 bytes");
-                let beat = u64::from_be_bytes(byte_array);
+        let mut byte_pos = 0;
+        let mut output_idx = 0;
+        for i in (0..done.item_count()) {
+            //one control message could hold many values to deserialize
+            let mut len = control_batch[i].length(); //TODO: strange import needed?    TODO: units on the chart would also be nice, and thicker lines.
+            while len>0 {
+                let slice = &payload_batch[byte_pos..(byte_pos+8)];
+                let beat = u64::from_be_bytes(slice.try_into().expect("Internal Error"));
 
                 if beat == u64::MAX {
                     state.shutdown_count += 1;
@@ -98,65 +81,62 @@ async fn internal_behavior<A: SteadyActor>(
                         actor.request_shutdown().await;
                     }
                 } else {
-                    assert!(actor.try_send(&mut tx_heartbeat, beat).is_sent());
+                    output_batch[output_idx] = beat;
+                    output_idx += 1;
                 }
+                byte_pos += 8;
+                len -= 8;
             }
-            units_count -= 1;
+        }
+        if output_idx>0 {
+             actor.send_slice(&mut tx_heartbeat, &output_batch[0..output_idx]);
+
+            // for i in 0..output_idx {
+            //     actor.try_send(&mut tx_heartbeat, output_batch[i]);
+            //
+            // }
+
+
         }
 
+        //////////////////////////////////////////////////
 
+        let mut units_count = state.batch_size
+            .min(actor.vacant_units(&mut tx_generator))
+            .min(actor.avail_units(&mut rx_generator));
 
+        let done = actor.take_slice(&mut rx_generator, ( &mut control_batch[0..units_count], &mut payload_batch[0.. ]  ));
 
-        //TODO: missing needed method?
-        //let _ = actor.take_slice(&mut rx_generator, &mut generator_batch[0..gen_count]);
+        let mut byte_pos = 0;
+        let mut output_idx = 0;
+        for i in (0..done.item_count()) {
+            //one control message could hold many values to deserialize
+            let mut len = control_batch[i].length(); //TODO: strange import needed?
+            while len>0 {
+                let slice = &payload_batch[byte_pos..(byte_pos+8)];
+                let beat = u64::from_be_bytes(slice.try_into().expect("Internal Error"));
 
-        loop {
-            let units_count =
-                           tx_batch.len()
-                          .min(actor.vacant_units(&mut tx_generator))
-                          .min(actor.avail_units(&mut rx_generator));
-            
-            if 0==units_count {
-                break;
-            }
-
-
-
-
-            // trace!("deserialize count {}",units_count);
-            
-            let mut idx = 0;
-            while idx<units_count {
-                //TODO: this gave us the %work but is not making uCPU, notsure why..
-                actor.relay_stats_smartly(); // TODO: we are not getting cpu and we did nto get error on missing await
-
-
-                //TODO: missing slice take of bytes?
-                if let Some(bytes) = actor.try_take(&mut rx_generator) {
-                    let byte_array: [u8; 8] = bytes
-                        .1
-                        .as_ref()
-                        .try_into()
-                        .expect("Expected exactly 8 bytes");
-                    let generated = u64::from_be_bytes(byte_array);
-                    if generated == u64::MAX {
-                        state.shutdown_count += 1;
-                        if state.shutdown_count == 2 {
-                            actor.request_shutdown().await;
-                        }
-                    } else {
-                        tx_batch[idx] = generated;
+                if beat == u64::MAX {
+                    state.shutdown_count += 1;
+                    if state.shutdown_count == 2 {
+                        actor.request_shutdown().await;
                     }
                 } else {
-                    break;
+                    output_batch[output_idx] = beat;
+                    output_idx += 1;
                 }
-                idx += 1;
+                byte_pos += 8;
+                len -= 8;
             }
-            assert_eq!(idx, actor.send_slice(&mut tx_generator, &mut tx_batch[0..idx]).item_count());
-            
-            // trace!("--------------------- done");
         }
+        if output_idx>0 {
+           actor.send_slice(&mut tx_generator, &output_batch[0..output_idx]);
 
+            // for i in 0..output_idx {
+            //     actor.try_send(&mut tx_heartbeat, output_batch[i]);
+            //
+            // }
+        }
     }
 
     Ok(())

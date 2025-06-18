@@ -1,5 +1,6 @@
 use std::env;
 use steady_state::*;
+use steady_state::distributed::aeron_channel_structs::ReliableConfig;
 use arg::MainArg;
 mod arg;
 
@@ -40,10 +41,7 @@ fn build_graph(graph: &mut Graph) {
 
     let channel_builder_small= channel_builder_base.with_capacity(10_001);
     let channel_builder_large = channel_builder_base.with_capacity(2_000_000);
-    
-    let (input_tx, input_rx) = channel_builder_large
-        .with_labels(&["input"], true)
-        .build_stream_bundle::<StreamIngress, 2>(1000);
+
 
     let (heartbeat_tx, heartbeat_rx) = channel_builder_small
         .with_labels(&["heartbeat"], true)
@@ -53,7 +51,13 @@ fn build_graph(graph: &mut Graph) {
         .build_channel();
     let (worker_tx, worker_rx) = channel_builder_large.build_channel();
 
+
+    let (input_tx, input_rx) = channel_builder_large
+        .with_labels(&["input"], true)
+        .build_stream_bundle::<StreamIngress, 2>(1000);
+
     let actor_builder = graph.actor_builder()
+        .with_thread_info()
         .with_load_avg()
         .with_mcpu_avg();
 
@@ -62,11 +66,12 @@ fn build_graph(graph: &mut Graph) {
         //.use_ipc()
         
         .with_media_type(MediaType::Udp) //large term for greater volume
-        .with_term_length((1024 * 1024 * 32) as usize)
+        .with_term_length((1024 * 1024 * 64) as usize)
         .use_point_to_point(Endpoint {
             ip: "127.0.0.1".parse().expect("Invalid IP address"),
-            port: 40456,
-        })
+            port: 40456,   //TODO: we need to make reliable the default!
+        })        .with_reliability(ReliableConfig::Reliable) //TODO: this is all odd because it validate in order not at done.
+
 
         .build();
     

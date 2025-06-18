@@ -38,6 +38,7 @@ pub(crate) struct WorkerState {
     pub(crate) values_processed: u64,
     pub(crate) messages_sent: u64,
     pub(crate) batch_size: usize,
+    pub(crate) audit_position: u64,
 }
 
 /// Entry point for the worker actor.
@@ -64,7 +65,7 @@ pub async fn run(
 // For double-buffering, this is set to 2.
 pub(crate) const SLICES: usize = 2; // important for high volume throughput
 
-pub(crate) const BATCH_SIZE: usize = 800_000;
+pub(crate) const BATCH_SIZE: usize = 9_000_000;
 
 /// The core logic for the worker actor.
 /// This function implements high-throughput, cache-friendly batch processing.
@@ -93,7 +94,8 @@ async fn internal_behavior<A: SteadyActor>(
         heartbeats_processed: 0,
         values_processed: 0,
         messages_sent: 0,
-        batch_size: BATCH_SIZE.min(generator.capacity()/SLICES),//FOR TESTING MAY NEED SOMETHING SMALLER
+        batch_size: BATCH_SIZE.min(generator.capacity()/SLICES),
+        audit_position: 0,
     }).await;
 
     // Pre-allocate buffers for batch processing.
@@ -104,6 +106,7 @@ async fn internal_behavior<A: SteadyActor>(
 
     assert!(state.batch_size * SLICES <= generator.capacity());
     assert!(state.batch_size * SLICES <= logger.capacity());
+
 
     // Main processing loop.
     // The actor runs until all input channels are closed and empty, and the output channel is closed.
@@ -143,6 +146,10 @@ async fn internal_behavior<A: SteadyActor>(
                     fizzbuzz_batch.clear();
                     fizzbuzz_batch.reserve(taken);
                     for &value in &generator_batch[..taken] {
+
+                        assert_eq!(state.audit_position, value, "missing numbers");
+                        state.audit_position += 1;
+
                         fizzbuzz_batch.push(FizzBuzzMessage::new(value));
                     }
 
@@ -154,7 +161,7 @@ async fn internal_behavior<A: SteadyActor>(
                     assert_eq!(sent_count, fizzbuzz_batch.len(), "expected to match since pre-checked");
 
                     // Log performance statistics periodically.
-                    if state.values_processed & (1 << 12) == 0 {
+                    if state.values_processed & (1 << 13) == 0 {
                         trace!(
                             "Worker processed {} values, sent {} messages",
                             state.values_processed,
