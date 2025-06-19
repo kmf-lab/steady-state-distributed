@@ -30,6 +30,8 @@ impl FizzBuzzMessage {
     }
 }
 
+//TODO: in the release we do not stop on panic and so we must fix collector not to be verbose!!
+
 /// State struct for the worker actor.
 /// Tracks the number of heartbeats, values processed, messages sent, and the batch size.
 /// The batch_size is set to half the channel capacity for double-buffering.
