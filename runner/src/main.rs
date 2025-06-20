@@ -18,6 +18,11 @@ fn main() {
     let mut children: Vec<Child> = Vec::new();
 
     for (i, &bin) in BINARIES.iter().enumerate() {
+        // let use_profile = if "subscribe".eq(bin) {
+        //     "release"
+        // } else {
+        //     profile
+        // };
         let path_str = format!("./target/{profile}/{bin}{exe_suffix}");
         println!("\nAttempting to launch: {path_str}");
 

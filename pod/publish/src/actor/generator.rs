@@ -79,7 +79,7 @@ pub(crate) struct GeneratorState {
 }
 
 const EXPECTED_UNITS_PER_BEAT:u64 = 9_000_000; //MUST MATCH THE CLIENT EXPECTATIONS
-//TODO: integratethe rest.
+
 pub async fn run(actor: SteadyActorShadow, generated_tx: SteadyTx<u64>, state: SteadyState<GeneratorState>) -> Result<(),Box<dyn Error>> {
     let actor = actor.into_spotlight([], [&generated_tx]);
     if actor.use_internal_behavior {
@@ -92,7 +92,7 @@ pub async fn run(actor: SteadyActorShadow, generated_tx: SteadyTx<u64>, state: S
 async fn internal_behavior<A: SteadyActor>(mut actor: A, generated: SteadyTx<u64>, state: SteadyState<GeneratorState> ) -> Result<(),Box<dyn Error>> {
     let args = actor.args::<crate::MainArg>().expect("unable to downcast");
     let beats = args.beats;
-
+    let total = beats * EXPECTED_UNITS_PER_BEAT;
     let mut generated = generated.lock().await;
 
     let mut state = state.lock(|| GeneratorState {
@@ -111,9 +111,13 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A, generated: SteadyTx<u64
 
         // Prepare a full batch of values
         batch.clear();
-        for _ in 0..state.batch_size {
+        for i in 0..state.batch_size {
             batch.push(state.next_value);
             state.next_value += 1;
+        }
+
+        if state.next_value >= total {
+            actor.request_shutdown().await;
         }
 
         // Send the entire batch at once for maximum throughput
@@ -126,7 +130,7 @@ async fn internal_behavior<A: SteadyActor>(mut actor: A, generated: SteadyTx<u64
         }
 
         // Log throughput periodically
-        if state.total_generated % 10000 == 0 {
+        if 0 == state.total_generated & (1u64<<15)-1 {
             trace!("Generator: {} total messages sent", state.total_generated);
         }
     }

@@ -1,6 +1,6 @@
 use std::env;
 use steady_state::*;
-use steady_state::distributed::aeron_channel_structs::ReliableConfig;
+use steady_state::distributed::aeron_channel_structs::{ControlMode, ReliableConfig};
 use arg::MainArg;
 mod arg;
 
@@ -62,15 +62,17 @@ fn build_graph(graph: &mut Graph) {
         .with_mcpu_avg();
 
     let aeron_channel = AeronConfig::new()
-        //.with_media_type(MediaType::Ipc)
-        //.use_ipc()
-        
-        .with_media_type(MediaType::Udp) //large term for greater volume
-        .with_term_length((1024 * 1024 * 64) as usize)
-        .use_point_to_point(Endpoint {
-            ip: "127.0.0.1".parse().expect("Invalid IP address"),
-            port: 40456,   //TODO: we need to make reliable the default!
-        })        .with_reliability(ReliableConfig::Reliable) //TODO: this is all odd because it validate in order not at done.
+        .with_media_type(MediaType::Ipc)
+        .use_ipc()
+       // .with_term_length((1024 * 1024 * 64) as usize)
+
+        // .with_media_type(MediaType::Udp) //large term for greater volume
+        // .with_term_length((1024 * 1024 * 64) as usize)
+        // .use_point_to_point(Endpoint {
+        //     ip: "127.0.0.1".parse().expect("Invalid IP address"),
+        //     port: 40456,   //TODO: we need to make reliable the default!
+        // })      //     .with_control_mode(ControlMode::Dynamic) // only for multi cast
+        // .with_reliability(ReliableConfig::Reliable) //TODO: this is all odd because it validate in order not at done.
 
 
         .build();

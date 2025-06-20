@@ -68,15 +68,19 @@ fn build_graph(graph: &mut Graph) {
                , SoloAct);
 
     let aeron_channel = AeronConfig::new()
-       // .with_media_type(MediaType::Ipc)
-       // .use_ipc()
-//        .with_control_mode(ControlMode::Dynamic)
-        .with_media_type(MediaType::Udp) //large term for greater volume
-        .with_term_length((1024 * 1024 * 64) as usize)
-        .use_point_to_point(Endpoint {
-            ip: "127.0.0.1".parse().expect("Invalid IP address"),
-            port: 40456,
-        })        .with_reliability(ReliableConfig::Reliable)
+        .with_media_type(MediaType::Ipc)
+        .use_ipc()
+      //  .with_term_length((1024 * 1024 * 64) as usize)
+
+        //         .with_media_type(MediaType::Udp) //large term for greater volume
+//         .with_term_length((1024 * 1024 * 64) as usize)
+//         .use_point_to_point(Endpoint {
+//             ip: "127.0.0.1".parse().expect("Invalid IP address"),
+//             port: 40456,
+//
+//         })
+//         //.with_control_mode(ControlMode::Dynamic) //only for multicast
+//         .with_reliability(ReliableConfig::Reliable)
 
 
         .build();

@@ -147,7 +147,14 @@ async fn internal_behavior<A: SteadyActor>(
                     fizzbuzz_batch.reserve(taken);
                     for &value in &generator_batch[..taken] {
 
-                        assert_eq!(state.audit_position, value, "missing numbers");
+                        if state.audit_position != value {
+
+                            error!("batch size {} batch0 {} batch1 {} batch2 {}", taken, generator_batch[0], generator_batch[1], generator_batch[2]);
+
+                            assert_eq!(state.audit_position,
+                            value,
+                            "missing numbers");
+                        }
                         state.audit_position += 1;
 
                         fizzbuzz_batch.push(FizzBuzzMessage::new(value));
