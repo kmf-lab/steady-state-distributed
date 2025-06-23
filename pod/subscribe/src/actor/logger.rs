@@ -21,6 +21,9 @@ pub(crate) struct LoggerState {
     pub(crate) value_count: u64,
 }
 
+const VALUES_PER_HEARTBEAT: u64 = 1_000_000;
+
+
 /// Entry point for the Logger actor.
 ///
 /// This function is called by the actor system to start the Logger. It receives:
@@ -54,10 +57,14 @@ pub async fn run(
 ///
 /// The function also periodically logs statistics for monitoring and diagnostics.
 async fn internal_behavior<A: SteadyActor>(
-    mut cmd: A,
+    mut actor: A,
     rx: SteadyRx<FizzBuzzMessage>,
     state: SteadyState<LoggerState>,
 ) -> Result<(), Box<dyn Error>> {
+    let args = actor.args::<crate::MainArg>().expect("unable to downcast");
+    let beats = args.beats;
+    let expected_total = beats * VALUES_PER_HEARTBEAT;
+
     // Lock the input channel for exclusive access during message processing.
     let mut rx = rx.lock().await;
 
@@ -78,20 +85,20 @@ async fn internal_behavior<A: SteadyActor>(
 
     // Main loop: continue running as long as the actor system is active and the
     // input channel is not closed and empty.
-    while cmd.is_running(|| rx.is_closed_and_empty()) {
+    while actor.is_running(|| rx.is_closed_and_empty()) {
         // Wait for either a periodic timer or enough messages to fill a batch.
         // This ensures that the logger is responsive even if the input rate is low.
         await_for_all_or_proceed_upon!(
-            cmd.wait_periodic(Duration::from_millis(40)),
-            cmd.wait_avail(&mut rx, state.batch_size)
+            actor.wait_periodic(Duration::from_millis(40)),
+            actor.wait_avail(&mut rx, state.batch_size)
         );
 
         // Determine how many messages are available to process.
-        let available = cmd.avail_units(&mut rx);
+        let available = actor.avail_units(&mut rx);
         if available > 0 {
             // Process up to batch_size messages at once for maximum throughput.
             let batch_size = available.min(state.batch_size);
-            let taken = cmd.take_slice(&mut rx, &mut batch[..batch_size]).item_count();
+            let taken = actor.take_slice(&mut rx, &mut batch[..batch_size]).item_count();
 
             if taken > 0 {
                 // Process the entire batch efficiently.
@@ -113,10 +120,11 @@ async fn internal_behavior<A: SteadyActor>(
 
                     state.messages_logged += 1;
 
+
                     // Log statistics for monitoring and diagnostics.
                     // - Log every message for the first 16, then at large intervals for performance.
                     if state.messages_logged < 16
-                        || (state.messages_logged & ((1u64 << 26) - 1)) == 0
+                        || (state.messages_logged & ((1u64 << 27) - 1)) == 0
                     {
                         info!(
                             "Logger: {} messages processed (F:{}, B:{}, FB:{}, V:{})",
@@ -126,13 +134,20 @@ async fn internal_behavior<A: SteadyActor>(
                             state.fizzbuzz_count,
                             state.value_count
                         );
-                    } else if (state.messages_logged & ((1u64 << 22) - 1)) == 0 {
+                    } else if (state.messages_logged & ((1u64 << 23) - 1)) == 0 {
                         trace!(
                             "Logger: {} messages processed",
                             state.messages_logged
                         );
                     }
                 }
+                if state.messages_logged >= expected_total {
+                    error!("shutdown requested");
+                    actor.request_shutdown().await;
+                }
+
+
+
             }
         }
     }
@@ -158,6 +173,7 @@ async fn internal_behavior<A: SteadyActor>(
 fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     use steady_logger::*;
     let _guard = start_log_capture();
+    use std::thread::sleep;
 
     let mut graph = GraphBuilder::for_testing().build(());
     let (fizz_buzz_tx, fizz_buzz_rx) = graph.channel_builder()

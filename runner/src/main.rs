@@ -4,18 +4,13 @@ use std::fs;
 use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::Mutex;
+use std::io::{self, Write};
 
-/// Toggle to enable or disable custom cargo build for each pod.
-/// If `false`, the runner will not build any binaries and expects them to be pre-built.
 const USE_CUSTOM_CARGO_BUILD: bool = true;
-
-/// If true, run `cargo clean` before building any pods.
 const CLEAN_BEFORE_BUILD: bool = false;
-
-/// Delay (in seconds) between launching each pod.
 const LAUNCH_DELAY_SECS: u64 = 3;
 
-/// Build mode for each pod: Debug, Release, or External (use whatever is present).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum BuildMode {
     #[allow(dead_code)]
@@ -26,23 +21,32 @@ enum BuildMode {
     External, // Use pre-built binary, don't build
 }
 
-/// Specification for each pod to be launched.
 #[derive(Copy, Clone, Debug)]
 struct PodSpec {
     name: &'static str,
     build_mode: BuildMode,
 }
 
-/// List of pods to launch, with their desired build mode.
-/// Add or modify entries here to control which pods are run and how.
 const POD_CONFIG: &[PodSpec] = &[
-    // use this to configure specific pods to be tested as Release or Debug
     PodSpec { name: "publish", build_mode: BuildMode::Release },
     PodSpec { name: "subscribe", build_mode: BuildMode::Release },
-    // Example for future pods:
-    // PodSpec { name: "analytics", build_mode: BuildMode::Release },
-    // PodSpec { name: "iot_gateway", build_mode: BuildMode::External },
 ];
+
+fn build_time_path(pod: &str) -> PathBuf {
+    let mut p = std::env::temp_dir();
+    p.push(format!("steady_state_build_{}.txt", pod));
+    p
+}
+
+fn read_last_build_time(pod: &str) -> Option<String> {
+    let path = build_time_path(pod);
+    fs::read_to_string(path).ok()
+}
+
+fn write_build_time(pod: &str, elapsed: Duration) {
+    let path = build_time_path(pod);
+    let _ = fs::write(path, format!("{:.2?}", elapsed));
+}
 
 fn main() {
     let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
@@ -56,7 +60,20 @@ fn main() {
          exe_suffix: {exe_suffix}\n"
     );
 
-    // Optionally clean before building
+    // Ctrl-C handling: kill all children and exit
+    let children_arc: Arc<Mutex<Vec<Child>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let children_arc = Arc::clone(&children_arc);
+        ctrlc::set_handler(move || {
+            println!("\nCtrl-C received, terminating all pods...");
+            let mut children = children_arc.lock().unwrap();
+            for child in children.iter_mut() {
+                let _ = child.kill();
+            }
+            std::process::exit(130);
+        }).expect("Error setting Ctrl-C handler");
+    }
+
     if USE_CUSTOM_CARGO_BUILD && CLEAN_BEFORE_BUILD {
         println!("Running `cargo clean`...");
         let status = Command::new("cargo")
@@ -90,6 +107,10 @@ fn main() {
             args.push("--bin");
             args.push(pod.name);
 
+            if let Some(last) = read_last_build_time(pod.name) {
+                println!("Last build time for '{}': {last}", pod.name);
+            }
+
             println!("Building pod '{}' (cargo {:?})...", pod.name, args);
 
             // Spinner setup
@@ -103,25 +124,28 @@ fn main() {
                     while spinning.load(Ordering::Relaxed) {
                         print!("\rBuilding... {}", spinner_chars[idx % spinner_chars.len()]);
                         idx += 1;
-                        std::io::Write::flush(&mut std::io::stdout()).ok();
+                        io::stdout().flush().ok();
                         sleep(Duration::from_millis(100));
                     }
                     let elapsed = start.elapsed();
                     print!("\rBuild complete in {:.2?}        \n", elapsed);
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                    io::stdout().flush().ok();
                 })
             };
 
-            // Capture output instead of hiding it
+            let start = Instant::now();
             let output = Command::new("cargo")
                 .args(&args)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output()
                 .expect("Failed to invoke cargo build");
+            let elapsed = start.elapsed();
 
             spinning.store(false, Ordering::Relaxed);
             spinner_handle.join().ok();
+
+            write_build_time(pod.name, elapsed);
 
             if !output.status.success() {
                 eprintln!("\nERROR: Cargo build failed for pod '{}'.", pod.name);
@@ -137,14 +161,11 @@ fn main() {
     }
 
     // === PHASE 2: LAUNCH ALL PODS IN ORDER ===
-    let mut children: Vec<Child> = Vec::new();
-
     for (i, pod) in POD_CONFIG.iter().enumerate() {
         let profile = match pod.build_mode {
             BuildMode::Debug => "debug",
             BuildMode::Release => "release",
             BuildMode::External => {
-                // Try release first, then debug
                 if Path::new(&format!("./target/release/{}{}", pod.name, exe_suffix)).exists() {
                     "release"
                 } else {
@@ -159,7 +180,6 @@ fn main() {
 
         let path = Path::new(&bin_path);
 
-        // Stepwise path existence check for better diagnostics
         let mut current = PathBuf::new();
         let mut found = true;
         for comp in path.components() {
@@ -190,18 +210,16 @@ fn main() {
             continue;
         }
 
-        // If the full path exists, try to launch
         match Command::new(&path).spawn() {
             Ok(child) => {
                 println!("Launched: {bin_path}");
-                children.push(child);
+                children_arc.lock().unwrap().push(child);
             }
             Err(e) => {
                 eprintln!("ERROR: Failed to start {bin_path}: {e}");
             }
         }
 
-        // Delay before launching the next pod, except after the last one
         if i + 1 < POD_CONFIG.len() {
             println!("Waiting {LAUNCH_DELAY_SECS} second(s) before launching next pod...");
             sleep(Duration::from_secs(LAUNCH_DELAY_SECS));
@@ -209,7 +227,8 @@ fn main() {
     }
 
     // Wait for all children to finish
-    for (i, mut child) in children.into_iter().enumerate() {
+    let mut children = children_arc.lock().unwrap();
+    for (i, mut child) in children.drain(..).enumerate() {
         match child.wait() {
             Ok(status) => println!("Process {i} exited with: {status}"),
             Err(e) => eprintln!("ERROR: Failed to wait for process {i}: {e}"),

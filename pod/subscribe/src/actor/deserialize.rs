@@ -1,30 +1,28 @@
 use std::error::Error;
 use steady_state::*;
-use steady_state::distributed::distributed_stream::StreamControlItem; // TODO: make pub
 
-/// Maintains the persistent state for the deserialization actor.
+/// Persistent state for the deserialization actor.
 ///
-/// This struct is used to track the progress and correctness of the deserialization process.
-/// It ensures that the actor can recover from panics or restarts without losing track of
-/// shutdown signals or the expected sequence of numbers in each stream.
+/// Tracks shutdown signals and the next expected sequence number for each stream.
+/// Ensures correctness and enables recovery after panics or restarts.
 pub(crate) struct DeserializeState {
-    /// Number of shutdown signals received (triggers shutdown when it reaches 2).
+    /// Number of shutdown signals received (shutdown after 2).
     shutdown_count: i32,
-    /// Next expected number in the heartbeat stream to verify sequence.
+    /// Next expected number in the heartbeat stream.
     next_heartbeat: u64,
-    /// Next expected number in the generator stream to verify sequence.
+    /// Next expected number in the generator stream.
     next_generator: u64,
 }
 
 /// Entry point for the deserialization actor.
 ///
-/// This function is called by the actor system to start the deserialization process. It receives:
-/// - The actor context (`actor`), which manages the actor's lifecycle and provides access to arguments and control.
-/// - An input bundle (`input`), which contains two stream channels (heartbeat and generator), each with a control and payload channel.
-/// - Two output channels (`heartbeat`, `generator`) for sending deserialized u64 values downstream.
-/// - A persistent state object (`state`) for tracking shutdown and sequence.
+/// Called by the actor system to start the deserialization process. Receives:
+/// - `actor`: The actor context, managing lifecycle and providing access to arguments and control.
+/// - `input`: Input bundle with two stream channels (heartbeat and generator), each with control and payload.
+/// - `heartbeat`, `generator`: Output channels for deserialized `u64` values.
+/// - `state`: Persistent state for tracking shutdown and sequence.
 ///
-/// The function links the actor to its input and output channels, then delegates to the core processing logic.
+/// Links the actor to its input/output channels, then delegates to the core processing logic.
 pub(crate) async fn run(
     actor: SteadyActorShadow,
     input: SteadyStreamRxBundle<StreamIngress, 2>,
@@ -32,27 +30,27 @@ pub(crate) async fn run(
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
 ) -> Result<(), Box<dyn Error>> {
-    // Prepare the actor with metadata and output channels for processing.
     let actor = actor.into_spotlight(input.payload_meta_data(), [&heartbeat, &generator]);
     internal_behavior(actor, input, heartbeat, generator, state).await
 }
 
-/// Core logic for processing incoming streams, deserializing data, and forwarding it to output channels.
+/// Maximum number of u64s to process in a single batch during deserialization.
+/// This is set to half the output channel capacity for efficient double-buffering.
+const MAX_BATCH: usize = 8192;
+
+/// Core logic for zero-copy deserialization of incoming streams.
 ///
-/// This function runs an infinite loop (until shutdown) that listens to two input streams (heartbeat and generator),
-/// deserializes their 8-byte payloads into 64-bit unsigned integers, checks their sequence, and sends them to the
-/// appropriate output channels. It handles shutdown signals and includes additional validation to ensure no
-/// sequence errors occur in the outgoing data.
+/// This function runs an async loop, listening to two input streams (heartbeat and generator),
+/// deserializing their payloads into `u64` values, checking sequence, and forwarding them to
+/// output channels. It uses direct buffer access for zero-copy efficiency.
 ///
 /// # Stream Structure
-/// Each input stream consists of two channels:
-///   - The control channel: for each group, a struct is read containing the length (in bytes)
-///     of the corresponding payload.
-///   - The payload channel: the actual serialized bytes, packed tightly.
+/// Each input stream consists of:
+///   - Control channel: For each group, a struct is read containing the length (in bytes) of the payload.
+///   - Payload channel: The actual serialized bytes, packed tightly.
 ///
 /// The function ensures that the control and payload channels remain in sync: for every
 /// control message, there is a corresponding block of bytes in the payload channel.
-/// This is essential for correct deserialization and for maintaining data integrity.
 ///
 /// # Sequence Checking
 /// The function checks that the numbers in each stream arrive in strict order, panicking
@@ -65,43 +63,31 @@ async fn internal_behavior<A: SteadyActor>(
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
 ) -> Result<(), Box<dyn Error>> {
-    // Gain exclusive access to the input streams.
+    // Lock and extract the two input streams.
     let mut input = input.lock().await;
-    let mut rx_generator = input.remove(1); // Generator stream (index 1).
-    let mut rx_heartbeat = input.remove(0); // Heartbeat stream (index 0).
-    drop(input); // Release the input bundle to prevent unintended reuse.
+    let mut rx_generator = input.remove(1); // Generator stream (index 1)
+    let mut rx_heartbeat = input.remove(0); // Heartbeat stream (index 0)
+    drop(input);
 
-    // Secure access to the output channels for sending deserialized data.
+    // Lock output channels for sending deserialized data.
     let mut tx_heartbeat = heartbeat.lock().await;
     let mut tx_generator = generator.lock().await;
 
-    // Initialize or access the shared state, setting defaults if first use.
+    // Initialize or access persistent state.
     let mut state = state.lock(|| DeserializeState {
         shutdown_count: 0,
         next_heartbeat: 0,
         next_generator: 0,
     }).await;
 
-    // Batch size is half the generator channel capacity for efficient processing.
-    let batch_size = tx_generator.capacity() / 2;
-
-    // Allocate buffers for efficient batch processing of incoming data.
-    // - control_batch: stores the control messages (lengths) for each group.
-    // - payload_batch: stores the raw bytes for each group.
-    // - output_batch: stores the deserialized u64 values to be sent downstream.
-    let mut control_batch = vec![StreamIngress::default(); batch_size];
-    let mut payload_batch = vec![0u8; batch_size * 8];
-    let mut output_batch = vec![0u64; batch_size];
-
     // Main processing loop: runs until the actor shuts down or streams are exhausted.
     while actor.is_running(|| {
-        rx_heartbeat.is_empty()
-            && rx_generator.is_empty()
+        rx_heartbeat.is_closed_and_empty()
+            // && rx_generator.is_closed_and_empty()
             && tx_generator.mark_closed()
             && tx_heartbeat.mark_closed()
     }) {
         // Wait for data availability in either stream and space in output channels.
-        // This uses "await_for_any" to allow either stream to be processed as soon as it is ready.
         await_for_any!(
             wait_for_all!(
                 actor.wait_avail(&mut rx_heartbeat, 1),
@@ -112,117 +98,190 @@ async fn internal_behavior<A: SteadyActor>(
                 actor.wait_vacant(&mut tx_generator, 1)
             )
         );
-        // trace!("top inputs heartbeats {:?} generator {:?}", rx_heartbeat.avail_units(), rx_generator.avail_units());
-        // trace!("top outputs heartbeats {:?} generator {:?}", tx_heartbeat.vacant_units(), tx_generator.vacant_units());
 
-        // === Process Heartbeat Stream ===
-        // Calculate the maximum number of bytes to process in this batch, based on available output space.
-        let bytes_limit = 8 * (batch_size.min(actor.vacant_units(&mut tx_heartbeat)));
-        // Take a batch of control and payload data from the heartbeat stream.
-        let done = actor.take_slice(&mut rx_heartbeat, (&mut control_batch[0..], &mut payload_batch[0..bytes_limit]));
-
-        let mut byte_pos = 0;
-        let mut output_idx = 0;
-        // For each control message in the batch, process its payload.
-        for i in 0..done.item_count() {
-            let mut len = control_batch[i].length(); // Length in bytes of this message's payload.
-            while len > 0 {
-                // Extract the next 8 bytes and convert to u64.
-                let slice = &payload_batch[byte_pos..(byte_pos + 8)];
-                let beat = u64::from_be_bytes(slice.try_into().expect("Failed to convert 8 bytes to u64"));
-
-                if beat == u64::MAX {
-                    // Handle shutdown signal: increment counter and shutdown after 2 signals.
-                    state.shutdown_count += 1;
-                    if state.shutdown_count == 2 {
-                        actor.request_shutdown().await;
-                    }
-                } else {
-                    // Verify sequence integrity; panic if out of order.
-                    if beat != state.next_heartbeat {
-                        panic!("Heartbeat sequence error: expected {}, got {}", state.next_heartbeat, beat);
-                    }
-                    state.next_heartbeat += 1;
-                    output_batch[output_idx] = beat;
-                    output_idx += 1;
-                }
-                byte_pos += 8;
-                len -= 8;
-            }
-        }
-        if output_idx > 0 {
-            // Extra validation: ensure the batch is consecutive.
-            if output_idx > 1 {
-                for i in 1..output_idx {
-                    if output_batch[i] != output_batch[i - 1] + 1 {
-                        panic!("Heartbeat batch not consecutive at index {}: {} followed by {}", i, output_batch[i - 1], output_batch[i]);
-                    }
-                }
-            }
-            // Log the batch details for debugging and traceability.
-            trace!("Sending heartbeat batch: start={}, end={}, count={}", output_batch[0], output_batch[output_idx - 1], output_idx);
-            actor.send_slice(&mut tx_heartbeat, &output_batch[0..output_idx]);
+        // Process heartbeat stream if data is available.
+        if actor.avail_units(&mut rx_heartbeat).0 > 0 {
+            let mut next_heartbeat = state.next_heartbeat;
+            let mut shutdown_count = state.shutdown_count;
+            process_stream(
+                &mut actor,
+                &mut rx_heartbeat,
+                &mut tx_heartbeat,
+                &mut next_heartbeat,
+                &mut shutdown_count,
+                |expected, got| panic!(
+                    "Heartbeat sequence error: expected {}, got {}",
+                    expected, got
+                ),
+                "heartbeat",
+            )
+                .await?;
+            state.next_heartbeat = next_heartbeat;
+            state.shutdown_count = shutdown_count;
         }
 
-        // === Process Generator Stream ===
-        // Calculate the maximum number of bytes to process in this batch, based on available output space.
-        let mut bytes_limit = 8 * (batch_size.min(actor.vacant_units(&mut tx_generator)));
-        // Take a batch of control and payload data from the generator stream.
-        let done = actor.take_slice(&mut rx_generator, (&mut control_batch[0..], &mut payload_batch[0..bytes_limit]));
-
-        let mut byte_pos = 0;
-        let mut output_idx = 0;
-        // For each control message in the batch, process its payload.
-        for i in 0..done.item_count() {
-            let mut len = control_batch[i].length(); // Length in bytes of this message's payload.
-            while len > 0 {
-                // Extract the next 8 bytes and convert to u64.
-                let slice = &payload_batch[byte_pos..(byte_pos + 8)];
-                let beat = u64::from_be_bytes(slice.try_into().expect("Failed to convert 8 bytes to u64"));
-
-                if beat == u64::MAX {
-                    // Handle shutdown signal: increment counter and shutdown after 2 signals.
-                    state.shutdown_count += 1;
-                    if state.shutdown_count == 2 {
-                        actor.request_shutdown().await;
-                    }
-                } else {
-                    // Verify sequence integrity; panic if out of order.
-                    if beat != state.next_generator {
-                        panic!("Generator sequence error: expected {}, got {}", state.next_generator, beat);
-                    }
-                    state.next_generator += 1;
-                    output_batch[output_idx] = beat;
-                    output_idx += 1;
-                }
-                byte_pos += 8;
-                len -= 8;
-            }
+        // Process generator stream if data is available.
+        if actor.avail_units(&mut rx_generator).0 > 0 {
+            let mut next_generator = state.next_generator;
+            let mut shutdown_count = state.shutdown_count;
+            process_stream(
+                &mut actor,
+                &mut rx_generator,
+                &mut tx_generator,
+                &mut next_generator,
+                &mut shutdown_count,
+                |expected, got| panic!(
+                    "Generator sequence error: expected {}, got {}",
+                    expected, got
+                ),
+                "generator",
+            )
+                .await?;
+            state.next_generator = next_generator;
+            state.shutdown_count = shutdown_count;
         }
-        if output_idx > 0 {
-            // Extra validation: ensure the batch is consecutive.
-            if output_idx > 1 {
-                for i in 1..output_idx {
-                    if output_batch[i] != output_batch[i - 1] + 1 {
-                        panic!("Generator batch not consecutive at index {}: {} followed by {}", i, output_batch[i - 1], output_batch[i]);
-                    }
-                }
-            }
-            // Log the batch details for debugging and traceability.
-            // trace!("Sending generator batch: start={}, end={}, count={}", output_batch[0], output_batch[output_idx - 1], output_idx);
 
-            let items = actor.send_slice(&mut tx_generator, &output_batch[..output_idx]).item_count();
-            assert_eq!(items, output_idx,"did not send all data");
+        // If two shutdown signals have been received, request shutdown.
+        if state.shutdown_count >= 2 {
+            actor.request_shutdown().await;
         }
     }
 
     Ok(())
 }
 
-/// Unit tests for the deserialization logic.
+/// Processes a single input stream (heartbeat or generator) in zero-copy batches.
 ///
-/// These tests verify that the deserialization process correctly handles incoming data,
-/// maintains sequence order, and shuts down appropriately when required.
+/// Reads control and payload slices directly from the ring buffer, deserializes `u64` values,
+/// checks sequence, and writes them to the output channel. Handles shutdown signals and
+/// ensures batch integrity.
+///
+/// # Arguments
+/// - `actor`: The actor context.
+/// - `rx`: Input stream (with control and payload).
+/// - `tx`: Output channel for deserialized `u64` values.
+/// - `next_expected`: Mutable reference to the next expected sequence number.
+/// - `shutdown_count`: Mutable reference to the shutdown signal counter.
+/// - `on_seq_error`: Closure to call on sequence error (for panic or error reporting).
+/// - `stream_name`: Name of the stream (for logging).
+async fn process_stream<A: SteadyActor, F>(
+    actor: &mut A,
+    rx: &mut StreamRx<StreamIngress>,
+    tx: &mut Tx<u64>,
+    next_expected: &mut u64,
+    shutdown_count: &mut i32,
+    on_seq_error: F,
+    _stream_name: &'static str, // unused, suppress warning
+) -> Result<(), Box<dyn Error>>
+where
+    F: Fn(u64, u64),
+{
+    // Preallocate a buffer for split payloads (max group size).
+    let mut combined = Vec::with_capacity(MAX_BATCH * 8);
+
+    // Peek control and payload slices (may be split due to ring buffer wraparound).
+    let (peek_control_a, peek_control_b, peek_payload_a, peek_payload_b) = actor.peek_slice(rx);
+    let (poke_a, poke_b) = actor.poke_slice(tx);
+
+    let mut control_pos = 0;
+    let mut payload_pos = 0;
+    let mut output_pos = 0;
+    let output_cap = poke_a.len() + poke_b.len();
+
+    // Process as many control messages as possible, up to output capacity.
+    while control_pos < peek_control_a.len() + peek_control_b.len() {
+        // Read control message (group length in bytes).
+        let control = if control_pos < peek_control_a.len() {
+            peek_control_a[control_pos]
+        } else {
+            peek_control_b[control_pos - peek_control_a.len()]
+        };
+        let group_bytes = control.length() as usize;
+        let group_count = group_bytes / 8;
+
+        // If not enough output space for this group, break.
+        if output_pos + group_count > output_cap {
+            break;
+        }
+
+        // Ensure we don't overrun the payload buffer.
+        let payload_end = payload_pos + group_bytes;
+        let (payload_slice, next_payload_pos): (&[u8], usize) = if payload_pos < peek_payload_a.len() {
+            if payload_end <= peek_payload_a.len() {
+                // All in a
+                (&peek_payload_a[payload_pos..payload_end], payload_end)
+            } else {
+                // Split between a and b
+                let a_rem = peek_payload_a.len() - payload_pos;
+                let b_rem = group_bytes - a_rem;
+                if b_rem > peek_payload_b.len() {
+                    // Not enough data in b, break
+                    break;
+                }
+                combined.clear();
+                combined.extend_from_slice(&peek_payload_a[payload_pos..]);
+                combined.extend_from_slice(&peek_payload_b[..b_rem]);
+                (&combined[..], group_bytes) // next_payload_pos is not used in this branch
+            }
+        } else {
+            // All in b
+            let b_start = payload_pos - peek_payload_a.len();
+            let b_end = b_start + group_bytes;
+            if b_end > peek_payload_b.len() {
+                // Not enough data in b, break
+                break;
+            }
+            (&peek_payload_b[b_start..b_end], payload_end)
+        };
+
+        // Deserialize each u64 in the group.
+        for i in 0..group_count {
+            let offset = i * 8;
+            let bytes: [u8; 8] = payload_slice[offset..offset + 8]
+                .try_into()
+                .expect("Failed to read 8 bytes for u64");
+            let value = u64::from_be_bytes(bytes);
+
+            if value == u64::MAX {
+                *shutdown_count += 1;
+            } else {
+                // Sequence check.
+                if value != *next_expected {
+                    on_seq_error(*next_expected, value);
+                }
+                *next_expected += 1;
+
+                // Write to output (poke_a or poke_b).
+                if output_pos < poke_a.len() {
+                    poke_a[output_pos].write(value);
+                } else {
+                    poke_b[output_pos - poke_a.len()].write(value);
+                }
+                output_pos += 1;
+            }
+        }
+
+        control_pos += 1;
+        payload_pos = if payload_pos < peek_payload_a.len() {
+            if payload_end <= peek_payload_a.len() {
+                next_payload_pos
+            } else {
+                // We crossed into b, so all of a is consumed, so start at b_rem in b.
+                peek_payload_a.len() + (group_bytes - (peek_payload_a.len() - payload_pos))
+            }
+        } else {
+            // All in b
+            next_payload_pos
+        };
+    }
+
+    // Advance indices to reflect processed data.
+    actor.advance_take_index(rx, (control_pos, payload_pos));
+    actor.advance_send_index(tx, output_pos);
+
+    Ok(())
+}
+
 #[cfg(test)]
 pub(crate) mod deserialize_tests {
     use super::*;
