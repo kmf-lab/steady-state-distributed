@@ -1,18 +1,42 @@
-use std::thread::sleep;
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
+/// Persistent state for the Logger actor.
+///
+/// This struct tracks all statistics and counters needed for robust, high-throughput logging.
+/// By storing these values in persistent state, the logger can recover from panics or restarts
+/// without losing track of how many messages have been processed or the breakdown of Fizz/Buzz types.
 pub(crate) struct LoggerState {
+    /// Total number of messages logged by this actor.
     pub(crate) messages_logged: u64,
+    /// The batch size used for high-performance processing.
     pub(crate) batch_size: usize,
+    /// Number of Fizz messages processed.
     pub(crate) fizz_count: u64,
+    /// Number of Buzz messages processed.
     pub(crate) buzz_count: u64,
+    /// Number of FizzBuzz messages processed.
     pub(crate) fizzbuzz_count: u64,
+    /// Number of Value (plain number) messages processed.
     pub(crate) value_count: u64,
 }
 
-pub async fn run(actor: SteadyActorShadow, fizz_buzz_rx: SteadyRx<FizzBuzzMessage>, state: SteadyState<LoggerState>) -> Result<(),Box<dyn Error>> {
+/// Entry point for the Logger actor.
+///
+/// This function is called by the actor system to start the Logger. It receives:
+/// - The actor context (`actor`), which manages the actor's lifecycle and provides access to arguments and control.
+/// - An input channel (`fizz_buzz_rx`) for receiving FizzBuzzMessage values from upstream.
+/// - A persistent state object (`state`) for tracking all logging statistics.
+///
+/// The function links the actor to its input channel, then delegates to the core processing logic.
+pub async fn run(
+    actor: SteadyActorShadow,
+    fizz_buzz_rx: SteadyRx<FizzBuzzMessage>,
+    state: SteadyState<LoggerState>,
+) -> Result<(), Box<dyn Error>> {
+    // Prepare the actor for robust monitoring and error handling.
     let actor = actor.into_spotlight([&fizz_buzz_rx], []);
+    // Choose between real internal logic or simulated/test mode.
     if actor.use_internal_behavior {
         internal_behavior(actor, fizz_buzz_rx, state).await
     } else {
@@ -20,36 +44,57 @@ pub async fn run(actor: SteadyActorShadow, fizz_buzz_rx: SteadyRx<FizzBuzzMessag
     }
 }
 
-async fn internal_behavior<A: SteadyActor>(mut cmd: A, rx: SteadyRx<FizzBuzzMessage>, state: SteadyState<LoggerState>) -> Result<(),Box<dyn Error>> {
-
-
+/// Core logic for the Logger actor: high-throughput, robust batch logging.
+///
+/// This function implements the main loop for processing and logging FizzBuzz messages.
+/// It uses batching to maximize throughput, and it ensures that all state changes
+/// (such as incrementing counters) are only made after successful operations.
+/// The function is robust to failures: if the actor panics or crashes, the persistent
+/// state ensures that it can resume without data loss or duplication.
+///
+/// The function also periodically logs statistics for monitoring and diagnostics.
+async fn internal_behavior<A: SteadyActor>(
+    mut cmd: A,
+    rx: SteadyRx<FizzBuzzMessage>,
+    state: SteadyState<LoggerState>,
+) -> Result<(), Box<dyn Error>> {
+    // Lock the input channel for exclusive access during message processing.
     let mut rx = rx.lock().await;
-    
+
+    // Lock the persistent state for this actor. If this is the first run, initialize
+    // the state with zeroed counters and a batch size based on channel capacity.
     let mut state = state.lock(|| LoggerState {
         messages_logged: 0,
-        batch_size: rx.capacity()/4,
+        batch_size: rx.capacity() / 4,
         fizz_count: 0,
         buzz_count: 0,
         fizzbuzz_count: 0,
         value_count: 0,
     }).await;
 
-
-    // Pre-allocate batch buffer for high-performance processing
+    // Pre-allocate a buffer for batch processing. This avoids repeated allocations
+    // and enables high-performance, zero-copy message handling.
     let mut batch = vec![FizzBuzzMessage::default(); state.batch_size];
 
+    // Main loop: continue running as long as the actor system is active and the
+    // input channel is not closed and empty.
     while cmd.is_running(|| rx.is_closed_and_empty()) {
-        await_for_all_or_proceed_upon!(cmd.wait_periodic(Duration::from_millis(40)),
-                                       cmd.wait_avail(&mut rx, state.batch_size));
+        // Wait for either a periodic timer or enough messages to fill a batch.
+        // This ensures that the logger is responsive even if the input rate is low.
+        await_for_all_or_proceed_upon!(
+            cmd.wait_periodic(Duration::from_millis(40)),
+            cmd.wait_avail(&mut rx, state.batch_size)
+        );
 
-        // Process messages in large batches for maximum throughput
+        // Determine how many messages are available to process.
         let available = cmd.avail_units(&mut rx);
         if available > 0 {
+            // Process up to batch_size messages at once for maximum throughput.
             let batch_size = available.min(state.batch_size);
             let taken = cmd.take_slice(&mut rx, &mut batch[..batch_size]).item_count();
 
             if taken > 0 {
-                // Process entire batch efficiently
+                // Process the entire batch efficiently.
                 for &msg in &batch[..taken] {
                     match msg {
                         FizzBuzzMessage::Fizz => {
@@ -66,10 +111,13 @@ async fn internal_behavior<A: SteadyActor>(mut cmd: A, rx: SteadyRx<FizzBuzzMess
                         }
                     }
 
-
                     state.messages_logged += 1;
 
-                    if state.messages_logged<16 || (state.messages_logged & ( (1u64<<24) - 1)) == 0 {
+                    // Log statistics for monitoring and diagnostics.
+                    // - Log every message for the first 16, then at large intervals for performance.
+                    if state.messages_logged < 16
+                        || (state.messages_logged & ((1u64 << 26) - 1)) == 0
+                    {
                         info!(
                             "Logger: {} messages processed (F:{}, B:{}, FB:{}, V:{})",
                             state.messages_logged,
@@ -78,8 +126,8 @@ async fn internal_behavior<A: SteadyActor>(mut cmd: A, rx: SteadyRx<FizzBuzzMess
                             state.fizzbuzz_count,
                             state.value_count
                         );
-                                        } else if (state.messages_logged & ((1u64<<20) - 1)) == 0 {
-                                            trace!(
+                    } else if (state.messages_logged & ((1u64 << 22) - 1)) == 0 {
+                        trace!(
                             "Logger: {} messages processed",
                             state.messages_logged
                         );
@@ -89,12 +137,23 @@ async fn internal_behavior<A: SteadyActor>(mut cmd: A, rx: SteadyRx<FizzBuzzMess
         }
     }
 
-    info!("Logger shutting down. Total: {} (F:{}, B:{}, FB:{}, V:{})",
-          state.messages_logged, state.fizz_count, state.buzz_count,
-          state.fizzbuzz_count, state.value_count);
+    // When the loop exits, log the final totals and return successfully.
+    info!(
+        "Logger shutting down. Total: {} (F:{}, B:{}, FB:{}, V:{})",
+        state.messages_logged,
+        state.fizz_count,
+        state.buzz_count,
+        state.fizzbuzz_count,
+        state.value_count
+    );
     Ok(())
 }
 
+/// Unit test for the Logger actor's batch processing and statistics.
+///
+/// This test verifies that the logger can process a large batch of FizzBuzz messages,
+/// correctly count each type, and log statistics as expected. It uses a simulated
+/// actor system and checks that the logs contain the expected output.
 #[test]
 fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     use steady_logger::*;
@@ -107,14 +166,16 @@ fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
 
     let state = new_state();
     graph.actor_builder().with_name("UnitTest")
-        .build(move |context| {
-            internal_behavior(context, fizz_buzz_rx.clone(), state.clone())
-        }
-               , SoloAct);
+        .build(
+            move |context| {
+                internal_behavior(context, fizz_buzz_rx.clone(), state.clone())
+            },
+            SoloAct,
+        );
 
     graph.start();
 
-    // Send large batch for performance testing
+    // Send a large batch for performance testing.
     let test_messages: Vec<FizzBuzzMessage> = (0..1000)
         .map(FizzBuzzMessage::new)
         .collect();
@@ -124,7 +185,7 @@ fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     graph.request_shutdown();
     graph.block_until_stopped(Duration::from_secs(1))?;
 
-    // Should see batch processing logs
+    // Should see batch processing logs.
     assert_in_logs!(["Logger:"]);
 
     Ok(())

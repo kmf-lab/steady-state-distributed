@@ -1,90 +1,190 @@
 use std::env;
 use steady_state::*;
 use steady_state::distributed::aeron_channel_structs::{ControlMode, ReliableConfig};
-//bring into lib
 use arg::MainArg;
 mod arg;
 
 pub(crate) mod actor {
-   pub(crate) mod heartbeat;
-   pub(crate) mod generator;
-   pub(crate) mod serialize;
+    pub(crate) mod heartbeat;
+    pub(crate) mod generator;
+    pub(crate) mod serialize;
 }
 
+// === ACTOR NAME CONSTANTS ===
+const NAME_HEARTBEAT: &str = "HEARTBEAT";
+const NAME_GENERATOR: &str = "GENERATOR";
+const NAME_SERIALIZE: &str = "SERIALIZE";
+const NAME_PUBLISH: &str = "PUBLISH";
+
+///
+/// # Distributed Publisher Main
+///
+/// This is the entry point for the **Publisher** side of a distributed, robust, high-throughput
+/// actor pipeline. The publisher is responsible for generating data, serializing it, and
+/// streaming it out over a high-performance Aeron channel to one or more subscribers.
+///
+/// ## System Overview
+///
+/// The publisher graph is composed of several robust actors, each running in its own thread,
+/// connected by high-capacity channels. The pipeline is designed for maximum throughput,
+/// reliability, and observability.
+///
+///
+/// ```text
+///   [HEARTBEAT]      [GENERATOR]
+///        |                |
+///        |                |
+///        +-------+--------+
+///                |
+///           [SERIALIZE]
+///                |
+///         [STREAM BUNDLE]
+///                |
+///           [PUBLISH]
+///                |
+///           [AERON IPC]
+/// ```
+///
+/// - **HEARTBEAT**: Generates periodic "beats" to pace the system.
+/// - **GENERATOR**: Produces a high-rate stream of values, simulating a real data source.
+/// - **SERIALIZE**: Batches and serializes values from both heartbeat and generator into a dual-channel stream (control + payload).
+/// - **STREAM BUNDLE**: Holds two channels per stream: one for control (lengths), one for payload (bytes).
+/// - **PUBLISH**: Streams the serialized data out to subscribers using Aeron (IPC or UDP).
+///
+/// ## Key Features
+///
+/// - **High Throughput**: Channels and batches are sized for millions of messages per second.
+/// - **Robustness**: Each actor is isolated and can recover from panics or failures.
+/// - **Observability**: Telemetry, logging, and channel triggers provide deep insight into system health.
+/// - **Distributed**: Output is streamed over Aeron, a high-performance messaging system.
+///
+/// ## Shutdown Barrier
+///
+/// The `.with_shutdown_barrier(2)` call ensures that the system will not fully shut down
+/// until two independent shutdown signals are received. This is critical in distributed
+/// systems to ensure that all data is flushed and all actors have completed their work
+/// before the process exits. For example, one shutdown may come from the local graph,
+/// and another from a remote subscriber or a control plane.
+///
+/// ## Environment Setup
+///
+/// The telemetry server is configured to run on localhost:5551 for monitoring.
+///
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Set up telemetry server environment variables for observability.
     unsafe {
         env::set_var("TELEMETRY_SERVER_PORT", "5551");
         env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
     }
 
+    // Parse command-line arguments (rate, beats, etc.) using clap.
     let cli_args = MainArg::parse();
+
+    // Initialize logging at Info level for runtime diagnostics and performance output.
     let _ = init_logging(LogLevel::Info);
+
+    // Build the actor graph with all channels and actors, using the parsed arguments.
+    // The shutdown barrier ensures the system waits for two shutdown signals before exiting.
     let mut graph = GraphBuilder::default()
-           .with_shutdown_barrier(2) //TODO: explain this feature..
-           .build(cli_args); //or pass () if no args
+        .with_shutdown_barrier(2) // Ensures robust, coordinated shutdown across distributed systems.
+        .build(cli_args);
 
     build_graph(&mut graph);
 
-    //startup entire graph
+    // Start the entire actor system. All actors and channels are now live.
     graph.start();
-    // your graph is running here until actor calls graph stop
+
+    // The system runs until an actor requests shutdown or the timeout is reached.
+    // The timeout here is set to allow for robust failure/recovery demonstration.
     graph.block_until_stopped(std::time::Duration::from_secs(600))
 }
 
+///
+/// # Graph Construction
+///
+/// This function builds the full actor pipeline and connects all channels.
+/// It demonstrates the robust architecture:
+/// - Each actor is built with persistent state, enabling automatic restart and state recovery.
+/// - Channels are created for each stage of the pipeline, with triggers for observability.
+/// - Each actor is built as a SoloAct, running on its own thread for failure isolation.
+/// - The final output is streamed over Aeron using a dual-channel (control + payload) bundle.
+///
+/// ## Channel Triggers and Telemetry
+///
+/// The channel builder is configured with triggers that monitor buffer fill levels:
+/// - **Red Alert**: If the channel is >90% full, a red alert is triggered.
+/// - **Orange Alert**: If the channel is >60% full, an orange alert is triggered.
+/// - **Average Fill/Rate**: Telemetry is collected for average fill and message rate.
+///
+/// These triggers are essential for diagnosing backpressure and tuning performance.
+///
 fn build_graph(graph: &mut Graph) {
+    // Configure channel builders with telemetry triggers for observability.
     let channel_builder_base = graph.channel_builder()
         .with_filled_trigger(Trigger::AvgAbove(Filled::p90()), AlertColor::Red)
         .with_filled_trigger(Trigger::AvgAbove(Filled::p60()), AlertColor::Orange)
         .with_avg_filled()
         .with_avg_rate();
 
-    let channel_builder_small= channel_builder_base.with_capacity(10_001);
+    // Small channel for heartbeat (low volume, high importance).
+    let channel_builder_small = channel_builder_base.with_capacity(10_001);
+    // Large channels for generator and stream output (high volume).
     let channel_builder_large = channel_builder_base.with_capacity(2_000_000);
 
+    // Build channels for each stage of the pipeline.
     let (heartbeat_tx, heartbeat_rx) = channel_builder_small.build_channel();
     let (generator_tx, generator_rx) = channel_builder_large.build_channel();
 
-
+    // Build a dual-channel stream bundle for serialized output.
+    // Each stream has a control channel (for lengths) and a payload channel (for bytes).
     let (output_tx, output_rx) = channel_builder_large
-        .build_stream_bundle::<StreamEgress, 2>(1000);
+        .build_stream_bundle::<StreamEgress, 2>(8);
 
+    // Configure the actor builder with thread, load, and CPU telemetry.
     let actor_builder = graph.actor_builder()
+        .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m768()), AlertColor::Red)
+        .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m512()), AlertColor::Orange)
+        .with_mcpu_trigger(Trigger::AvgAbove(MCPU::m256()), AlertColor::Yellow)
         .with_thread_info()
         .with_load_avg()
         .with_mcpu_avg();
 
+    // Build the heartbeat actor.
     let state = new_state();
-    actor_builder.with_name("heartbeat")
+    actor_builder.with_name(NAME_HEARTBEAT)
         .build(move |context| { actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone()) }
                , SoloAct);
 
+    // Build the generator actor.
     let state = new_state();
-    actor_builder.with_name("generator")
+    actor_builder.with_name(NAME_GENERATOR)
         .build(move |context| { actor::generator::run(context, generator_tx.clone(), state.clone()) }
                , SoloAct);
 
-    actor_builder.with_name("serialize")
+    // Build the serialize actor, which batches and serializes data for streaming.
+    actor_builder.with_name(NAME_SERIALIZE)
         .build(move |context| { actor::serialize::run(context, heartbeat_rx.clone(), generator_rx.clone(), output_tx.clone()) }
                , SoloAct);
 
+    // === Aeron Output Configuration ===
+    //
+    // The Aeron channel is configured for IPC (inter-process communication) by default.
+    // You can switch to UDP or multicast by uncommenting the relevant sections.
+    // Aeron is a high-performance, low-latency messaging system ideal for distributed streaming.
+    //
     let aeron_channel = AeronConfig::new()
         .with_media_type(MediaType::Ipc)
         .use_ipc()
-      //  .with_term_length((1024 * 1024 * 64) as usize)
-
-        //         .with_media_type(MediaType::Udp) //large term for greater volume
-//         .with_term_length((1024 * 1024 * 64) as usize)
-//         .use_point_to_point(Endpoint {
-//             ip: "127.0.0.1".parse().expect("Invalid IP address"),
-//             port: 40456,
-//
-//         })
-//         //.with_control_mode(ControlMode::Dynamic) //only for multicast
-//         .with_reliability(ReliableConfig::Reliable)
-
-
+        // .with_term_length((1024 * 1024 * 64) as usize) // Optional: large term for greater volume
+        // .with_media_type(MediaType::Udp)
+        // .use_point_to_point(Endpoint {
+        //     ip: "127.0.0.1".parse().expect("Invalid IP address"),
+        //     port: 40456,
+        // })
+        // .with_reliability(ReliableConfig::Reliable)
         .build();
 
+    // For multicast, use the following (uncomment and adjust as needed):
     // let aeron_config = AeronConfig::new()
     //     .with_media_type(MediaType::Udp)
     //     .use_multicast(Endpoint {
@@ -93,14 +193,13 @@ fn build_graph(graph: &mut Graph) {
     //     }, "eth0") // Specify network interface
     //     .build();
 
+    error!("publish to: {:?}", aeron_channel.cstring());
 
-
-    error!("publish to: {:?}",aeron_channel.cstring());
-
-    
-    output_rx.build_aqueduct(AqueTech::Aeron(aeron_channel, 40)
-                             , &mut actor_builder.with_name("publish")
-                             , SoloAct
+    // Build the final aqueduct (stream output) actor, which streams data over Aeron.
+    output_rx.build_aqueduct(
+        AqueTech::Aeron(aeron_channel, 40), // 40 = max in-flight messages
+        &mut actor_builder.with_name(NAME_PUBLISH),
+        SoloAct,
     );
 }
 
@@ -111,30 +210,30 @@ pub(crate) mod publish_main_tests {
     use steady_state::graph_testing::{StageDirection, StageWaitFor};
     use super::*;
 
+    /// Integration test for the publisher graph.
+    ///
+    /// This test simulates the full actor pipeline, verifies that the correct data would be sent
+    /// to the Aeron output, and ensures that the system can be orchestrated and shut down cleanly.
     #[test]
     fn graph_test() -> Result<(), Box<dyn Error>> {
         // Initialize test graph with reasonable arguments
         let mut graph = GraphBuilder::for_testing()
-                                     .build(MainArg::default());
+            .build(MainArg::default());
 
         build_graph(&mut graph);
         graph.start();
 
-        // Simulate actor behavior
+        // Simulate actor behavior using the stage manager.
         let stage_manager = graph.stage_manager();
-        stage_manager.actor_perform("generator", StageDirection::EchoAt(0, 15u64))?;
-        stage_manager.actor_perform("heartbeat", StageDirection::Echo(0u64))?;
-        //in this test we do NOT send anything to aeron instead we confirm what we WOULD have sent matches our expectations.
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(0, StreamEgress::build(&[0u8,0,0,0,0,0,0,0]), Duration::from_secs(4)))?;
-        stage_manager.actor_perform( "publish", StageWaitFor::MessageAt(1, StreamEgress::build(&[0u8,0,0,0,0,0,0,15]), Duration::from_secs(4)))?;
+        stage_manager.actor_perform(NAME_GENERATOR, StageDirection::EchoAt(0, 15u64))?;
+        stage_manager.actor_perform(NAME_HEARTBEAT, StageDirection::Echo(0u64))?;
+        // In this test we do NOT send anything to Aeron; instead, we confirm what we WOULD have sent matches our expectations.
+        stage_manager.actor_perform(NAME_PUBLISH, StageWaitFor::MessageAt(0, StreamEgress::build(&[0u8,0,0,0,0,0,0,0]), Duration::from_secs(4)))?;
+        stage_manager.actor_perform(NAME_PUBLISH, StageWaitFor::MessageAt(1, StreamEgress::build(&[0u8,0,0,0,0,0,0,15]), Duration::from_secs(4)))?;
         stage_manager.final_bow();
-        
+
         graph.request_shutdown();
         graph.block_until_stopped(Duration::from_secs(3))?;
         Ok(())
     }
-// TODO: string constants!!
-   
 }
-
-
