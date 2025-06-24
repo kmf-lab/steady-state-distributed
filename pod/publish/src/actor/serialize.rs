@@ -1,6 +1,5 @@
 use std::error::Error;
 use steady_state::*;
-use steady_state::distributed::distributed_stream::StreamControlItem;
 use std::mem::MaybeUninit;
 use std::cmp::min;
 
@@ -73,7 +72,6 @@ async fn internal_behavior<A: SteadyActor>(
     let wait_heartbeat_out = tx_heartbeat.capacity().0 / 2; // Min output space (control channel)
     let wait_generator_out = tx_generator.capacity().0 / 2; // Min output space (control channel)
 
-    let mut total_moved = 0;
     // Main loop: continue running as long as the actor is active and the channels are not closed.
     // The closure checks for shutdown conditions and closes output channels when done.
     while actor.is_running(|| rx_heartbeat.is_closed_and_empty()
@@ -83,7 +81,7 @@ async fn internal_behavior<A: SteadyActor>(
 
         // Wait for either sufficient input/output or any data in a closed input channel.
         // This uses "await_for_any" to allow either stream to be processed as soon as it is ready.
-        let clean = await_for_any!(
+        let _clean = await_for_any!(
             wait_for_all!(
                 // If the rx is closed, this will return immediately.
                 actor.wait_avail(&mut rx_heartbeat, wait_heartbeat_in),
@@ -105,9 +103,7 @@ async fn internal_behavior<A: SteadyActor>(
         // Process generator stream if data is available.
         if actor.avail_units(&mut rx_generator) > 0 {
             // Serialize a group of generator values and write to the output stream.
-            let done = serialize_stream(&mut actor, &mut rx_generator, &mut tx_generator, MAX_GROUP).await;
-            let bytes_moved = done.payload_count().expect("Failed to get payload count");
-            total_moved += bytes_moved;
+            let _done = serialize_stream(&mut actor, &mut rx_generator, &mut tx_generator, MAX_GROUP).await;
         }
     }
     Ok(())

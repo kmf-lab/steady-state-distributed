@@ -1,9 +1,7 @@
 use steady_state::*;
 use std::error::Error;
 use std::mem::MaybeUninit;
-use std::time::Duration;
 
-const CHANNEL_CAPACITY: usize = 2_000_000;
 const VALUES_PER_HEARTBEAT: usize = 1_000_000;
 
 #[derive(Copy, Clone, Default, Debug, PartialEq, Eq)]
@@ -71,7 +69,7 @@ async fn internal_behavior<A: SteadyActor>(
 
     while actor.is_running(|| {
         heartbeat.is_closed_and_empty()
-            //&& generator.is_closed_and_empty()
+            //skipped on purpose: && generator.is_closed_and_empty()
             && logger.mark_closed()
     }) {
         // Wait for a heartbeat, enough input, and enough output space
@@ -121,11 +119,11 @@ async fn internal_behavior<A: SteadyActor>(
 
         // 2. peek_a → poke_b
         let n2 = process(&peek_a[offset_in..], &mut poke_b[..]);
-        offset_in += n2;
+        //offset_in += n2;
 
         // 3. peek_b → poke_a
-        let n3 = process(&peek_b[..], &mut poke_a[offset_out..]);
-        offset_out += n3;
+        let n3 = process(&peek_b, &mut poke_a[offset_out..]);
+        //offset_out += n3;
 
         // 4. peek_b → poke_b
         let n4 = process(&peek_b[n3..], &mut poke_b[n2..]);
