@@ -138,8 +138,9 @@ fn build_graph(graph: &mut Graph) {
     // Build a dual-channel stream bundle for Aeron input.
     // Each stream has a control channel (for lengths) and a payload channel (for bytes).
     let (input_tx, input_rx) = channel_builder_large
+        .with_capacity(20_000)
         .with_labels(&["input"], true)
-        .build_stream_bundle::<StreamIngress, 2>(1000);
+        .build_stream_bundle::<StreamIngress, 2>(65536); //must agree with serialize plan, TODO: need a const.
 
     // Configure the actor builder with thread, load, and CPU telemetry.
     let actor_builder = graph.actor_builder()
@@ -157,8 +158,8 @@ fn build_graph(graph: &mut Graph) {
     // Aeron is a high-performance, low-latency messaging system ideal for distributed streaming.
     //
     let aeron_channel = AeronConfig::new()
-//        .with_media_type(MediaType::Ipc)
-  //      .use_ipc()
+        //.with_media_type(MediaType::Ipc)
+        //.use_ipc()
         .with_term_length((1024 * 1024 * 64) as usize)
         .with_media_type(MediaType::Udp)
         .use_point_to_point(Endpoint {

@@ -173,8 +173,8 @@ fn build_graph(graph: &mut Graph) {
     // Aeron is a high-performance, low-latency messaging system ideal for distributed streaming.
     //
     let aeron_channel = AeronConfig::new()
-    //    .with_media_type(MediaType::Ipc)
-    //    .use_ipc()
+       // .with_media_type(MediaType::Ipc)
+       // .use_ipc()
         .with_term_length((1024 * 1024 * 64) as usize) // Optional: large term for greater volume
         .with_media_type(MediaType::Udp)
         .use_point_to_point(Endpoint {

@@ -48,6 +48,17 @@ fn write_build_time(pod: &str, elapsed: Duration) {
     let _ = fs::write(path, format!("{:.2?}", elapsed));
 }
 
+// New function to parse the build time string (e.g., "1.23s") into a Duration
+fn parse_build_time(s: &str) -> Option<Duration> {
+    let s = s.trim();
+    if s.ends_with('s') {
+        let num_str = &s[..s.len() - 1];
+        num_str.parse::<f64>().ok().map(Duration::from_secs_f64)
+    } else {
+        None
+    }
+}
+
 fn main() {
     let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
 
@@ -113,22 +124,30 @@ fn main() {
 
             println!("Building pod '{}' (cargo {:?})...", pod.name, args);
 
-            // Spinner setup
+            // Modified progress indicator setup
             let spinning = Arc::new(AtomicBool::new(true));
             let spinner_handle = {
                 let spinning = Arc::clone(&spinning);
+                let start = Instant::now();
+                let previous_build_time = read_last_build_time(pod.name).and_then(|s| parse_build_time(&s));
                 spawn(move || {
-                    let spinner_chars = ['|', '/', '-', '\\'];
-                    let mut idx = 0;
-                    let start = Instant::now();
                     while spinning.load(Ordering::Relaxed) {
-                        print!("\rBuilding... {}", spinner_chars[idx % spinner_chars.len()]);
-                        idx += 1;
+                        let elapsed = start.elapsed();
+                        if let Some(prev) = previous_build_time {
+                            if prev > Duration::ZERO {
+                                let percentage = ((elapsed.as_secs_f64() / prev.as_secs_f64()) * 100.0).round() as u32;
+                                print!("\rCompiling... {}%", percentage);
+                            } else {
+                                print!("\rCompiling...");
+                            }
+                        } else {
+                            print!("\rCompiling...");
+                        }
                         io::stdout().flush().ok();
                         sleep(Duration::from_millis(100));
                     }
                     let elapsed = start.elapsed();
-                    print!("\rBuild complete in {:.2?}        \n", elapsed);
+                    print!("\rBuild complete in {:.2?}                    \n", elapsed);
                     io::stdout().flush().ok();
                 })
             };
