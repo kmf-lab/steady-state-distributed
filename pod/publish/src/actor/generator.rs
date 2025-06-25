@@ -66,7 +66,7 @@ async fn internal_behavior<A: SteadyActor>(
 
     // Calculate the total number of messages to generate, based on the number of beats
     // and the expected number of units per beat.
-    let total = beats * EXPECTED_UNITS_PER_BEAT;
+    let final_total = beats * EXPECTED_UNITS_PER_BEAT;
 
     // Lock the output channel for exclusive access during message generation.
     let mut generated = generated.lock().await;
@@ -92,41 +92,50 @@ async fn internal_behavior<A: SteadyActor>(
         // Wait until there is enough space in the output channel to send a full batch.
         await_for_all!(actor.wait_vacant(&mut generated, wait_for));
 
-        // Prepare to write a batch of messages into the channel's buffer.
-        // The buffer may be split into two slices for efficient access.
-        let (poke_a, poke_b) = actor.poke_slice(&mut generated);
+        if state.total_generated < final_total {
+            // Prepare to write a batch of messages into the channel's buffer.
+            // The buffer may be split into two slices for efficient access.
+            let (poke_a, poke_b) = actor.poke_slice(&mut generated);
 
-        // Calculate the total number of slots available for writing in this batch.
-        let count = poke_a.len() + poke_b.len();
+            // Calculate the total number of slots available for writing in this batch.
+            let count = poke_a.len() + poke_b.len();
 
-        // Write sequential values into the first slice of the buffer.
-        for i in 0..poke_a.len() {
-            poke_a[i].write(next_value);
-            next_value += 1;
+            // Write sequential values into the first slice of the buffer.
+            for i in 0..poke_a.len() {
+                poke_a[i].write(next_value);
+                next_value += 1;
+            }
+            // Write sequential values into the second slice of the buffer, if present.
+            for i in 0..poke_b.len() {
+                poke_b[i].write(next_value);
+                next_value += 1;
+            }
+
+            //only advance up to our final_total
+            let count = if count as u64 + state.total_generated < final_total {
+                count
+            } else {
+                (final_total - state.total_generated) as usize
+            };
+
+            // Commit the batch of messages to the channel, advancing the send index.
+            // The number of messages actually sent is returned.
+            let sent_count = actor.advance_send_index(&mut generated, count).item_count();
+
+            // Update the persistent state to reflect the total number of messages generated.
+            state.total_generated += sent_count as u64;
+
+            // Periodically log the total number of messages sent for monitoring and diagnostics.
+            // This log is written every 8192 messages (2^13).
+            if 0 == (state.total_generated & ((1u64 << 13) - 1)) {
+                trace!("Generator: {} total messages sent", state.total_generated);
+            }
+
+        } else {
+                info!("Generator is done {}", state.total_generated);
+                actor.request_shutdown().await;
         }
-        // Write sequential values into the second slice of the buffer, if present.
-        for i in 0..poke_b.len() {
-            poke_b[i].write(next_value);
-            next_value += 1;
-        }
-
-        // Commit the batch of messages to the channel, advancing the send index.
-        // The number of messages actually sent is returned.
-        let sent_count = actor.advance_send_index(&mut generated, count).item_count();
-
-        // Update the persistent state to reflect the total number of messages generated.
-        state.total_generated += sent_count as u64;
-
-        // Periodically log the total number of messages sent for monitoring and diagnostics.
-        // This log is written every 8192 messages (2^13).
-        if 0 == (state.total_generated & ((1u64 << 13) - 1)) {
-            trace!("Generator: {} total messages sent", state.total_generated);
-        }
-
-        // If the target number of messages has been generated, request a system shutdown.
-        if total == state.total_generated {
-            actor.request_shutdown().await;
-        }
+        
     }
 
     // When the loop exits, log the final total and return successfully.

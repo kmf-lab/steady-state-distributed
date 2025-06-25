@@ -68,7 +68,7 @@ async fn internal_behavior<A: SteadyActor>(
         .await;
 
     while actor.is_running(|| {
-        heartbeat.is_closed_and_empty()
+             heartbeat.is_closed_and_empty()
             //skipped on purpose: && generator.is_closed_and_empty()
             && logger.mark_closed()
     }) {
@@ -136,6 +136,9 @@ async fn internal_behavior<A: SteadyActor>(
             );
         }
 
+        if total_taken !=0 {
+            assert_eq!(VALUES_PER_HEARTBEAT, total_taken);
+        }
         // Advance channel indices
         assert_eq!(
             total_taken,

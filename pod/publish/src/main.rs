@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The system runs until an actor requests shutdown or the timeout is reached.
     // The timeout here is set to allow for robust failure/recovery demonstration.
-    graph.block_until_stopped(std::time::Duration::from_secs(600))
+    graph.block_until_stopped(Duration::from_secs(5))
 }
 
 ///
@@ -149,17 +149,19 @@ fn build_graph(graph: &mut Graph) {
         .with_load_avg()
         .with_mcpu_avg();
 
+    let mut troupe = graph.actor_troupe();
+
     // Build the heartbeat actor.
     let state = new_state();
     actor_builder.with_name(NAME_HEARTBEAT)
         .build(move |context| { actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone()) }
-               , SoloAct);
+               , MemberOf(&mut troupe));
 
     // Build the generator actor.
     let state = new_state();
     actor_builder.with_name(NAME_GENERATOR)
         .build(move |context| { actor::generator::run(context, generator_tx.clone(), state.clone()) }
-               , SoloAct);
+               , MemberOf(&mut troupe));
 
     // Build the serialize actor, which batches and serializes data for streaming.
     actor_builder.with_name(NAME_SERIALIZE)
@@ -172,28 +174,26 @@ fn build_graph(graph: &mut Graph) {
     // You can switch to UDP or multicast by uncommenting the relevant sections.
     // Aeron is a high-performance, low-latency messaging system ideal for distributed streaming.
     //
-    let aeron_channel = AeronConfig::new()
-       .with_media_type(MediaType::Ipc)
-       .use_ipc()
-       //  .with_term_length((1024 * 1024 * 64) as usize) // Optional: large term for greater volume
-       //  .with_media_type(MediaType::Udp)
-       //  .use_point_to_point(Endpoint {
-       //      ip: "127.0.0.1".parse().expect("Invalid IP address"),
-       //      port: 40456,
-       //  })
-       //  .with_reliability(ReliableConfig::Reliable)
-        .build();
 
-    // For multicast, use the following (uncomment and adjust as needed):
-    // let aeron_config = AeronConfig::new()
-    //     .with_media_type(MediaType::Udp)
-    //     .use_multicast(Endpoint {
-    //         ip: "224.0.1.1".parse().expect("Invalid IP"),
-    //         port: 40456,
-    //     }, "eth0") // Specify network interface
-    //     .build();
+    let use_ipc = false;
 
-    error!("publish to: {:?}", aeron_channel.cstring());
+    let aeron_config = AeronConfig::new();
+
+    let aeron_config = if use_ipc {
+        aeron_config.with_media_type(MediaType::Ipc)
+    } else {
+        aeron_config.with_media_type(MediaType::Udp)
+                    .with_term_length((1024 * 1024 * 64) as usize)
+                    .use_point_to_point(Endpoint {
+                        ip: "127.0.0.1".parse().expect("Invalid IP address"),
+                        port: 40456,
+                    })
+                    .with_reliability(ReliableConfig::Reliable)
+    };
+
+
+    let aeron_channel = aeron_config.build();
+    info!("publish to aeron: {:?}", aeron_channel.cstring());
 
     // Build the final aqueduct (stream output) actor, which streams data over Aeron.
     output_rx.build_aqueduct(

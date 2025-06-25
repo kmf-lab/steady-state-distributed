@@ -72,7 +72,7 @@ async fn internal_behavior<A: SteadyActor>(
     // the state with zeroed counters and a batch size based on channel capacity.
     let mut state = state.lock(|| LoggerState {
         messages_logged: 0,
-        batch_size: rx.capacity() / 4,
+        batch_size: rx.capacity() / 2,
         fizz_count: 0,
         buzz_count: 0,
         fizzbuzz_count: 0,
@@ -83,13 +83,14 @@ async fn internal_behavior<A: SteadyActor>(
     // and enables high-performance, zero-copy message handling.
     let mut batch = vec![FizzBuzzMessage::default(); state.batch_size];
 
+    let max_latency = Duration::from_millis(40);
     // Main loop: continue running as long as the actor system is active and the
     // input channel is not closed and empty.
     while actor.is_running(|| rx.is_closed_and_empty()) {
         // Wait for either a periodic timer or enough messages to fill a batch.
         // This ensures that the logger is responsive even if the input rate is low.
         await_for_all_or_proceed_upon!(
-            actor.wait_periodic(Duration::from_millis(40)),
+            actor.wait_periodic(max_latency),
             actor.wait_avail(&mut rx, state.batch_size)
         );
 
@@ -134,15 +135,10 @@ async fn internal_behavior<A: SteadyActor>(
                             state.fizzbuzz_count,
                             state.value_count
                         );
-                    } else if (state.messages_logged & ((1u64 << 23) - 1)) == 0 {
-                        trace!(
-                            "Logger: {} messages processed",
-                            state.messages_logged
-                        );
                     }
                 }
-                if state.messages_logged >= expected_total {
-                    error!("shutdown requested");
+                if state.messages_logged == expected_total {
+                    info!("shutdown requested");
                     actor.request_shutdown().await;
                 }
 

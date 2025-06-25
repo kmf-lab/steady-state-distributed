@@ -9,7 +9,7 @@ use std::io::{self, Write};
 
 const USE_CUSTOM_CARGO_BUILD: bool = true;
 const CLEAN_BEFORE_BUILD: bool = false;
-const LAUNCH_DELAY_SECS: u64 = 3;
+const LAUNCH_DELAY_SECS: u64 = 7;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum BuildMode {

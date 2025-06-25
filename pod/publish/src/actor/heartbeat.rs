@@ -95,7 +95,7 @@ async fn internal_behavior<A: SteadyActor>(
                         .await
                         .is_sent()
                 );
-                error!("Heartbeat is done {}", state.count);
+                info!("Heartbeat is done {}", state.count);
                 actor.request_shutdown().await;
             }
         }

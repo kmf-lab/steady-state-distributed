@@ -75,9 +75,9 @@ async fn internal_behavior<A: SteadyActor>(
     // Main loop: continue running as long as the actor is active and the channels are not closed.
     // The closure checks for shutdown conditions and closes output channels when done.
     while actor.is_running(|| rx_heartbeat.is_closed_and_empty()
-        && rx_generator.is_closed_and_empty()
-        && tx_generator.mark_closed()
-        && tx_heartbeat.mark_closed()) {
+                            && rx_generator.is_closed_and_empty()
+                            && tx_generator.mark_closed()
+                            && tx_heartbeat.mark_closed()) {
 
         // Wait for either sufficient input/output or any data in a closed input channel.
         // This uses "await_for_any" to allow either stream to be processed as soon as it is ready.
@@ -101,9 +101,12 @@ async fn internal_behavior<A: SteadyActor>(
         }
 
         // Process generator stream if data is available.
-        if actor.avail_units(&mut rx_generator) > 0 {
+        while actor.avail_units(&mut rx_generator) > 0 {
             // Serialize a group of generator values and write to the output stream.
-            let _done = serialize_stream(&mut actor, &mut rx_generator, &mut tx_generator, MAX_GROUP).await;
+            let done = serialize_stream(&mut actor, &mut rx_generator, &mut tx_generator, MAX_GROUP).await;
+            if 0 == done.item_count() {
+                break;
+            }
         }
     }
     Ok(())

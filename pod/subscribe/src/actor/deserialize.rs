@@ -82,10 +82,10 @@ async fn internal_behavior<A: SteadyActor>(
 
     // Main processing loop: runs until the actor shuts down or streams are exhausted.
     while actor.is_running(|| {
-        rx_heartbeat.is_closed_and_empty()
-            // && rx_generator.is_closed_and_empty()
-            && tx_generator.mark_closed()
-            && tx_heartbeat.mark_closed()
+                        rx_heartbeat.is_closed_and_empty() // messy do not use is closed??
+                        // && rx_generator.is_closed_and_empty()
+                        && tx_generator.mark_closed()
+                        && tx_heartbeat.mark_closed()
     }) {
         // Wait for data availability in either stream and space in output channels.
         await_for_any!(
@@ -146,7 +146,7 @@ async fn internal_behavior<A: SteadyActor>(
             actor.request_shutdown().await;
         }
     }
-
+    info!("Deserialization actor shut down");
     Ok(())
 }
 

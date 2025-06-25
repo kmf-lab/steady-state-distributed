@@ -11,7 +11,7 @@ pub(crate) mod actor {
 }
 
 // === ACTOR NAME CONSTANTS ===
-const NAME_AERON: &str = "AERON";
+const NAME_SUBSCRIBE: &str = "SUBSCRIBE";
 const NAME_DESERIALIZE: &str = "DESERIALIZE";
 const NAME_WORKER: &str = "WORKER";
 const NAME_LOGGER: &str = "LOGGER";
@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     graph.start();
 
     // The system runs until an actor requests shutdown or the timeout is reached.
-    graph.block_until_stopped(std::time::Duration::from_secs(600))
+    graph.block_until_stopped(Duration::from_secs(5))
 }
 
 ///
@@ -157,24 +157,29 @@ fn build_graph(graph: &mut Graph) {
     // You can switch to UDP or multicast by uncommenting the relevant sections.
     // Aeron is a high-performance, low-latency messaging system ideal for distributed streaming.
     //
-    let aeron_channel = AeronConfig::new()
-        .with_media_type(MediaType::Ipc)
-        .use_ipc()
-        // .with_term_length((1024 * 1024 * 64) as usize)
-        // .with_media_type(MediaType::Udp)
-        // .use_point_to_point(Endpoint {
-        //     ip: "127.0.0.1".parse().expect("Invalid IP address"),
-        //     port: 40456,
-        // })
-        // .with_reliability(ReliableConfig::Reliable)
-        .build();
+    let use_ipc = false;
 
-    error!("subscribe to: {:?}", aeron_channel.cstring());
+    let aeron_config = AeronConfig::new();
+
+    let aeron_config = if use_ipc {
+        aeron_config.with_media_type(MediaType::Ipc)
+    } else {
+        aeron_config.with_media_type(MediaType::Udp)
+            .with_term_length((1024 * 1024 * 64) as usize)
+            .use_point_to_point(Endpoint {
+                ip: "127.0.0.1".parse().expect("Invalid IP address"),
+                port: 40456,
+            })
+            .with_reliability(ReliableConfig::Reliable)
+    };
+    
+    let aeron_channel = aeron_config.build();
+    info!("subscribe to: {:?}", aeron_channel.cstring());
 
     // Build the aqueduct (Aeron input) actor, which receives data over Aeron.
     input_tx.build_aqueduct(
         AqueTech::Aeron(aeron_channel, 40),
-        &mut actor_builder.with_name(NAME_AERON),
+        &mut actor_builder.with_name(NAME_SUBSCRIBE),
         SoloAct
     );
 
@@ -228,13 +233,13 @@ pub(crate) mod subscribe_main_tests {
 
         //NOTE: we send 1 generated message and THEN the heartbeat to release it
         //      we also make sure the session_id matches and make up an arrival time of now
-        stage_manager.actor_perform(NAME_AERON,
+        stage_manager.actor_perform(NAME_SUBSCRIBE,
                                     StageDirection::EchoAt(1, StreamIngress::build(sender_session_id
                                                                                    ,first_byte_arrival,last_byte_finished
                                                                                    ,&[0, 0, 0, 0, 0, 0, 0, 15]))
         )?;
         //these messages are FAKE and did not come from aeron instead we INJECT them here like they arrived
-        stage_manager.actor_perform(NAME_AERON,
+        stage_manager.actor_perform(NAME_SUBSCRIBE,
                                     StageDirection::EchoAt(0, StreamIngress::build(sender_session_id
                                                                                    ,first_byte_arrival,last_byte_finished
                                                                                    ,&[0, 0, 0, 0, 0, 0, 0, 0]))
