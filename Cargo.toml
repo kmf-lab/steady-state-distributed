@@ -7,15 +7,3 @@ members = [
 ]
 resolver = "2"
 
-#TODO: we need the scripts for both deploys, systemd and helm chart
-#      common build bins for both sub and pub in target?
-#      then custom scripts? perhaps k8s should be docker build?  IDP Builder example
-#      docker for systemd? must have 1 installer per each pod
-
-# SS build in installer?? can we inject that?
-# SS on build.rs for module build our installers in root for k8s.
-#   build-windows-installer.sh, build-systemd-installer.sh, build-k8s-installer
-#   installers are post processing of the bin built   ALL or name of child.
-#  build the appropriate script or helm chart and put it into the target
-#   research can we add post code hook to final cargo build??
-

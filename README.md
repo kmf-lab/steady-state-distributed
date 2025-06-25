@@ -1,168 +1,60 @@
-# Steady State Distributed
 
-A distributed actor system demonstrating enterprise-grade communication patterns and network-based processing with the `steady_state` framework.
+# Steady State Core and Runner
 
-## 🌐 Distributed Overview
+## Overview
 
-This project showcases enterprise-grade distributed processing patterns:
+The `steady_state` framework is a Rust library designed to build robust, high-performance actor systems for distributed applications. It powers the core functionality of this project and provides the following key features:
 
-- **Multi-Process Architecture**: Split processing across independent publisher and subscriber pods
-- **High-Performance Networking**: Aeron-based communication for ultra-low latency message transport
-- **Serialization Pipeline**: Automatic conversion between typed data and network-efficient byte streams
-- **Coordinated Shutdown**: Synchronized termination across distributed components
-- **Stream Multiplexing**: Multiple data channels over single network connections
-- **Transport Flexibility**: Support for both UDP and IPC communication protocols
+- **Actor Isolation**: Each actor runs in its own thread, ensuring failure isolation and simplifying debugging.
+- **Persistent State**: Actors maintain state that persists across panics or restarts, ensuring data integrity.
+- **High-Throughput Channels**: Efficient communication channels with built-in telemetry and triggers for monitoring system health.
+- **Distributed Communication**: Integration with [Aeron](https://github.com/real-logic/aeron), a high-performance messaging library, for ultra-low latency communication between processes or machines.
+- **Telemetry and Monitoring**: Built-in telemetry servers provide real-time insights into system performance and health.
 
-## 🎯 System Architecture
+The **runner** is a utility that orchestrates the deployment of the publisher and subscriber pods, which are built using the `steady_state` framework. It ensures that the distributed system starts up correctly and shuts down gracefully.
 
-**Distributed Processing Pipeline**:
+## Runner Functionality
 
-**Publisher Pod**:
-Generator → Serialize → Network Transport
-↗ Heartbeat ↗
+The runner manages the lifecycle of the publisher and subscriber pods with the following steps:
 
-**Subscriber Pod**:
-Network Transport → Deserialize → Worker → Logger
-↗ (Split streams)
+1. **Builds the Pods** (optional):
+    - If `USE_CUSTOM_CARGO_BUILD` is enabled, the runner builds the `publish` and `subscribe` binaries using Cargo.
+    - Supports both debug and release profiles, configured via `BuildMode` in `runner/src/main.rs`.
+    - If `CLEAN_BEFORE_BUILD` is true, it runs `cargo clean` before building.
 
-- **Publisher Generator**: Creates sequential data streams with coordinated timing
-- **Publisher Heartbeat**: Provides synchronized timing signals across the network
-- **Serialize Actor**: Converts typed data into network-optimized byte streams
-- **Network Transport**: High-performance Aeron messaging for ultra-low latency communication
-- **Deserialize Actor**: Reconstructs typed data from incoming byte streams
-- **Subscriber Worker**: Processes distributed FizzBuzz logic with network coordination
-- **Subscriber Logger**: Outputs results from distributed processing pipeline
+2. **Launches the Pods**:
+    - Spawns the publisher and subscriber processes in sequence, with a configurable delay (`LAUNCH_DELAY_SECS`) between launches to ensure proper initialization.
+    - Locates binaries in `./target/release/` or `./target/debug/` based on the build mode.
 
-## 🧠 Distributed Concepts
+3. **Handles Shutdown**:
+    - Sets up a Ctrl-C handler to terminate all running pods gracefully, ensuring no orphaned processes remain.
 
-### Local vs Distributed Processing
+### Configuration
 
-| Local Processing | Distributed Processing |
-|-----------------|----------------------|
-| Single process memory | Multi-process network communication |
-| Direct type passing | Serialization/deserialization required |
-| Shared failure domain | Isolated failure domains per pod |
-| Single machine resources | Scalable across multiple machines |
-| Microsecond latency | Optimized network latency |
+The runner’s behavior is controlled by constants in `runner/src/main.rs`:
 
-### Network Communication Patterns
+- `USE_CUSTOM_CARGO_BUILD`: If `true`, builds pods before launching (default: `true`).
+- `CLEAN_BEFORE_BUILD`: If `true`, cleans the build directory before building (default: `false`).
+- `LAUNCH_DELAY_SECS`: Delay in seconds between pod launches (default: `3`).
 
-**Stream Multiplexing**: The system uses stream bundles to send multiple logical data channels over a single network connection. The heartbeat and generator data travel as separate streams but share the same underlying transport for efficiency.
+### Aeron Communication
 
-**Serialization Pipeline**: Data flows through automatic conversion stages—from typed Rust data structures to byte arrays optimized for network transmission, then back to typed structures on the receiving end.
+The publisher and subscriber pods communicate over Aeron, a high-performance messaging system. The runner does not directly configure Aeron but launches the pods with their respective Aeron settings:
 
-**Transport Abstraction**: The same application logic works with both UDP (for cross-machine communication) and IPC (for cross-process communication on the same machine), demonstrating transport independence.
+- **Publisher**: Sends data over Aeron (IPC or UDP) to the subscriber.
+- **Subscriber**: Receives data from the publisher via Aeron.
 
-### Advanced Distributed Coordination
+Aeron configuration (e.g., IPC vs. UDP, IP, port) is passed to the pods via command-line arguments. For details, see the [Publisher README](#readme-2-publisher) and [Server README](#readme-3-server).
 
-**Synchronized Shutdown**: The publisher coordinates termination by sending special sentinel values that the subscriber recognizes, ensuring clean shutdown across the distributed system without leaving orphaned processes.
+## Usage
 
-**Flow Control**: The network transport automatically handles backpressure, buffering, and flow control, allowing the application logic to focus on business processing rather than network management.
+To run the system:
 
-**Stream Ordering**: Multiple data streams maintain their individual ordering guarantees while being multiplexed over the shared network connection.
+1. Ensure Rust and Cargo are installed.
+2. Navigate to the `runner` directory.
+3. Run `cargo run` to build and launch the pods.
+4. Use Ctrl-C to terminate all pods cleanly.
 
-## 🏗️ Network Architecture
+The runner logs build and launch progress, including build times stored in temporary files for reference.
 
-### Pod Isolation
 
-**Publisher Pod**: Operates as an independent process or container, generating data and timing signals. It runs its own telemetry server on port 5551 and manages its own actor lifecycle completely independently of the subscriber.
-
-**Subscriber Pod**: Functions as a separate process or container, receiving and processing the distributed data stream. It operates its own telemetry server on port 5552 and maintains complete operational independence.
-
-**Network Boundary**: The two pods communicate exclusively through the high-performance Aeron messaging layer, with no shared memory or direct process dependencies.
-
-### Transport Technologies
-
-**Aeron Integration**: Uses Aeron's zero-copy, lock-free messaging for ultra-low latency communication between pods. The transport layer handles connection management, reliability, and flow control transparently.
-
-**UDP Point-to-Point**: Configured for direct machine-to-machine communication with specific IP addresses and ports, suitable for distributed deployment across multiple physical or virtual machines.
-
-**IPC Alternative**: Can be configured for inter-process communication on the same machine, offering even lower latency for containerized deployments on single hosts.
-
-### Stream Management
-
-**Bundle Architecture**: Stream bundles group related data channels together, allowing the heartbeat and generator streams to be managed as a unit while maintaining their distinct identities and processing characteristics.
-
-**Buffer Optimization**: Large buffer sizes combined with stream-aware flow control ensure maximum throughput while preventing data loss during network congestion or temporary slowdowns.
-
-**Message Framing**: Automatic handling of message boundaries and stream delineation, ensuring that messages are delivered as complete units regardless of underlying network packet fragmentation.
-
-## 📊 Distributed Features
-
-### Network Performance
-
-**Ultra-Low Latency**: Aeron's design minimizes message delivery time through zero-copy techniques, lock-free data structures, and optimized network protocols.
-
-**High Throughput**: Stream multiplexing and efficient serialization enable processing of hundreds of thousands of messages per second across the network boundary.
-
-**Automatic Backpressure**: The system gracefully handles situations where the subscriber cannot keep up with the publisher, preventing memory exhaustion and maintaining system stability.
-
-### Deployment Flexibility
-
-**Container Ready**: Each pod operates independently with its own configuration, making them suitable for Docker containers, Kubernetes pods, or traditional process deployment.
-
-**Network Configuration**: Command-line arguments control communication parameters, allowing the same binaries to be deployed in different network topologies without recompilation.
-
-**Telemetry Separation**: Independent telemetry servers per pod provide isolated monitoring and debugging capabilities for each component of the distributed system.
-
-### Distributed Coordination
-
-**Synchronized Startup**: The publisher begins generating data immediately, while the subscriber connects and begins processing as soon as it receives the first messages, enabling flexible startup ordering.
-
-**Coordinated Shutdown**: Special sentinel messages coordinate clean termination across both pods, ensuring all in-flight data is processed before system shutdown.
-
-**Failure Isolation**: Problems in one pod don't directly affect the other, and the network transport handles temporary disconnections gracefully with automatic reconnection.
-
-## 🚀 Distributed Results
-
-### Network Performance Metrics
-
-| Metric | Local Processing | Distributed Processing |
-|--------|------------------|----------------------|
-| Message latency | Microseconds | Low milliseconds |
-| Throughput capacity | Memory limited | Network optimized |
-| Failure isolation | Single process | Per-pod isolation |
-| Scalability | Single machine | Multi-machine |
-
-### Deployment Characteristics
-
-**Resource Distribution**: CPU and memory load can be distributed across multiple machines, with the publisher and subscriber running on different hardware optimized for their specific workloads.
-
-**Independent Scaling**: Publisher and subscriber pods can be scaled independently based on their specific resource requirements and processing characteristics.
-
-**Network Efficiency**: Aeron's optimized transport minimizes network bandwidth usage while maximizing message delivery reliability and speed.
-
-## 🛠️ Usage Scenarios
-
-**Development Mode**: Run both pods on the same machine using IPC for rapid development and testing without network complexity.
-
-**Production Deployment**: Deploy publisher and subscriber pods on separate machines using UDP transport for maximum performance and isolation.
-
-**Container Orchestration**: Each pod runs in its own container with external network configuration, suitable for Kubernetes or similar orchestration platforms.
-
-**Performance Testing**: Use high-speed network configurations to test the maximum throughput and latency characteristics of the distributed processing pipeline.
-
-## 🎯 Key Distributed Capabilities
-
-- **Enterprise-grade networking** with Aeron's ultra-low latency transport
-- **Automatic serialization** handling for complex data types across network boundaries
-- **Independent pod deployment** supporting diverse distributed architectures
-- **Stream multiplexing** for efficient use of network connections
-- **Coordinated distributed shutdown** ensuring clean system termination
-- **Transport abstraction** supporting both UDP and IPC communication modes
-- **Isolated failure domains** preventing cascading failures across pods
-- **Real-time distributed monitoring** with per-pod telemetry and metrics
-
-## 🔧 Deployment Considerations
-
-**Network Configuration**: Ensure proper firewall rules and network routing for UDP communication between publisher and subscriber machines.
-
-**Container Orchestration**: Each pod requires its own container with appropriate network policies and service discovery configuration.
-
-**Performance Tuning**: Aeron transport parameters can be tuned for specific network conditions and performance requirements.
-
-**Monitoring Setup**: Configure separate monitoring for each pod's telemetry server to maintain visibility into distributed system health.
-
-**Resource Planning**: Plan CPU and memory resources independently for each pod based on their specific processing characteristics and expected load patterns.
-
-This distributed architecture demonstrates how to build production-ready, high-performance distributed systems using the steady_state framework's advanced networking and coordination capabilities.
