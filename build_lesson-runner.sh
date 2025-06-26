@@ -108,5 +108,5 @@ popd > /dev/null
 
 # Create a .txt copy if the output file is not already a .txt file
 if [[ "$output_file" != *.txt ]]; then
-    cp "$output_file" "${output_file}.txt"
+    cp "$output_file" "../lesson-02C-distributed-runner.md.txt"
 fi
