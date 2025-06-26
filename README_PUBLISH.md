@@ -15,19 +15,20 @@ The publisher pod generates data, serializes it, and transmits it to the subscri
 ### Architecture
 
 The publisher’s actors are connected as follows:
+```
 [HEARTBEAT]      [GENERATOR]
-|                |
-|                |
-+-------+--------+
-|
+    |                |
+    |                |
+    +-------+--------+
+     |
 [SERIALIZE]
-|
+     |
 [STREAM BUNDLE]
-|
+     |
 [PUBLISH]
-|
+     |
 [AERON IPC/UDP]
-
+```
 - **Heartbeat Actor**: Sends timing signals (e.g., every 20 microseconds by default) to coordinate the system.
 - **Generator Actor**: Generates batches of sequential numbers (1 million per beat by default).
 - **Serialize Actor**: Combines and serializes data into a dual-channel stream (control and payload).

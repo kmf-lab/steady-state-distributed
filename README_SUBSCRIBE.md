@@ -15,17 +15,19 @@ The subscriber pod, receives data from the publisher over Aeron, deserializes it
 ### Architecture
 
 The subscriber’s actors are connected as follows:
-[AERON]
-|
-[STREAM BUNDLE]
-|
-[DESERIALIZE]
-/        
-[HEARTBEAT] [GENERATOR]
-|             |
-+------[WORKER]------+
-|
-[LOGGER]
+```
+         [AERON]
+           |
+      (STREAM BUNDLE)
+           |
+      [DESERIALIZE]
+       /        \  
+(HEARTBEAT) (GENERATOR)
+   |             |
+ +------[WORKER]------+
+             |
+         [LOGGER]
+```
 
 - **Aeron Actor**: Receives serialized data from the publisher.
 - **Deserialize Actor**: Converts bytes back into `u64` values and ensures sequence correctness.
