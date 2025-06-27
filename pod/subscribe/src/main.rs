@@ -57,14 +57,6 @@ const NAME_LOGGER: &str = "LOGGER";
 /// - **Observability**: Telemetry, logging, and channel triggers provide deep insight into system health.
 /// - **Distributed**: Input is streamed over Aeron, a high-performance messaging system.
 ///
-/// ## Shutdown Barrier
-///
-/// The `.with_shutdown_barrier(2)` call ensures that the system will not fully shut down
-/// until two independent shutdown signals are received. This is critical in distributed
-/// systems to ensure that all data is flushed and all actors have completed their work
-/// before the process exits. For example, one shutdown may come from the local graph,
-/// and another from a remote publisher or a control plane.
-///
 /// ## Environment Setup
 ///
 /// The telemetry server is configured to run on localhost:5552 for monitoring.
@@ -103,16 +95,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// - Channels are created for each stage of the pipeline, with triggers for observability.
 /// - Each actor is built as a SoloAct, running on its own thread for failure isolation.
 /// - The input is streamed in over Aeron using a dual-channel (control + payload) bundle.
-///
-/// ## Channel Triggers and Telemetry
-///
-/// The channel builder is configured with triggers that monitor buffer fill levels:
-/// - **Red Alert**: If the channel is >90% full, a red alert is triggered.
-/// - **Orange Alert**: If the channel is >60% full, an orange alert is triggered.
-/// - **Average Fill/Rate**: Telemetry is collected for average fill and message rate.
-///
-/// These triggers are essential for diagnosing backpressure and tuning performance.
-///
 fn build_graph(graph: &mut Graph) {
     // Configure channel builders with telemetry triggers for observability.
     let channel_builder_base = graph.channel_builder()
@@ -128,10 +110,8 @@ fn build_graph(graph: &mut Graph) {
 
     // Build channels for each stage of the pipeline.
     let (heartbeat_tx, heartbeat_rx) = channel_builder_small
-        .with_labels(&["heartbeat"], true)
         .build_channel();
     let (generator_tx, generator_rx) = channel_builder_large
-        .with_labels(&["generator"], true)
         .build_channel();
     let (worker_tx, worker_rx) = channel_builder_large.build_channel();
 
@@ -139,7 +119,6 @@ fn build_graph(graph: &mut Graph) {
     // Each stream has a control channel (for lengths) and a payload channel (for bytes).
     let (input_tx, input_rx) = channel_builder_large
         .with_capacity(20_000)
-        .with_labels(&["input"], true)
         .build_stream_bundle::<StreamIngress, 2>(65536); //must agree with serialize plan, TODO: need a const.
 
     // Configure the actor builder with thread, load, and CPU telemetry.

@@ -15,11 +15,11 @@ pub(crate) struct HeartbeatState {
 ///
 /// This asynchronous function is called by the actor system to start the Heartbeat actor.
 /// It receives a handle to the actor's context (`actor`), a sending channel (`heartbeat_tx`)
-/// for outputting heartbeat values, and a persistent state object (`state`).
+/// for outputting heartbeat values, and a reliable state object (`state`).
 ///
 /// The function determines whether to run the actor's real internal logic or a simulated
 /// behavior (for testing or orchestration). The internal logic is responsible for
-/// periodically sending heartbeat messages, while maintaining robust, persistent state.
+/// periodically sending heartbeat messages, while maintaining robust, reliable state.
 pub async fn run(
     actor: SteadyActorShadow,
     heartbeat_tx: SteadyTx<u64>,

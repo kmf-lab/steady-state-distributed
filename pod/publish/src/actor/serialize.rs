@@ -15,9 +15,9 @@ use std::cmp::min;
 /// The function links the actor to its input and output channels, then delegates to the core processing logic.
 pub(crate) async fn run(
     actor: SteadyActorShadow,           // Actor managing the steady-state process
-    heartbeat: SteadyRx<u64>,           // Input channel for 64-bit heartbeat values
+    heartbeat: SteadyRx<u64>,           // Input channel for 64-bit heartbeat values //#!#//
     generator: SteadyRx<u64>,           // Input channel for 64-bit generator values
-    output: SteadyStreamTxBundle<StreamEgress, 2>, // Output bundle with two streams
+    output: SteadyStreamTxBundle<StreamEgress, 2>, // Output bundle with two streams  //#!#//
 ) -> Result<(), Box<dyn Error>> {
     // Link the actor to its inputs (heartbeat, generator) and output metadata.
     // This enables robust monitoring and error handling.
@@ -59,7 +59,7 @@ async fn internal_behavior<A: SteadyActor>(
     let mut rx_heartbeat = heartbeat.lock().await;
     let mut rx_generator = generator.lock().await;
     let mut output = output.lock().await;
-    // Remove the two output streams from the bundle: one for generator, one for heartbeat.
+    // Remove the two output streams from the bundle: one for generator, one for heartbeat.  //#!#//
     let mut tx_generator = output.remove(1); // Generator output stream (index 1)
     let mut tx_heartbeat = output.remove(0); // Heartbeat output stream (index 0)
     drop(output); // Drop the bundle to free resources early.
@@ -81,7 +81,7 @@ async fn internal_behavior<A: SteadyActor>(
 
         // Wait for either sufficient input/output or any data in a closed input channel.
         // This uses "await_for_any" to allow either stream to be processed as soon as it is ready.
-        let _clean = await_for_any!(
+        let _clean = await_for_any!(                          //#!#//
             wait_for_all!(
                 // If the rx is closed, this will return immediately.
                 actor.wait_avail(&mut rx_heartbeat, wait_heartbeat_in),
@@ -93,6 +93,8 @@ async fn internal_behavior<A: SteadyActor>(
                 actor.wait_vacant(&mut tx_generator, (wait_generator_out, wait_generator_out * 8))
             )
         );
+
+        //could have been two actors in one troupe but what would be the fun in that: //#!#//
 
         // Process heartbeat stream if data is available.
         if actor.avail_units(&mut rx_heartbeat) > 0 {
@@ -145,7 +147,7 @@ async fn serialize_stream<A: SteadyActor>(
     let (poke_control_a
         , poke_control_b
         , poke_payload_a
-        , poke_payload_b) = actor.poke_slice(tx);
+        , poke_payload_b) = actor.poke_slice(tx);            //#!#//
 
     // Track positions in buffers.
     let mut input_pos = 0;         // u64s consumed from input
@@ -197,8 +199,8 @@ async fn serialize_stream<A: SteadyActor>(
 
     // Update indices to reflect processed data.
     // This advances the read position in the input channel and the write position in the output stream.
-    actor.advance_take_index(rx, input_pos);
-    actor.advance_send_index(tx, (control_pos, payload_byte_pos))
+    actor.advance_take_index(rx, input_pos);                                 //#!#//
+    actor.advance_send_index(tx, (control_pos, payload_byte_pos))     //#!#//
 }
 
 /// Writes 8 bytes to payload slices, handling buffer splits safely.

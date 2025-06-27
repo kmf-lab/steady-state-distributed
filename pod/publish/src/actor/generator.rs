@@ -21,12 +21,12 @@ pub(crate) struct GeneratorState {
 ///
 /// This asynchronous function is called by the actor system to start the Generator.
 /// It receives a handle to the actor's context (`actor`), a sending channel (`generated_tx`)
-/// for outputting generated values, and a persistent state object (`state`).
+/// for outputting generated values, and a reliable state object (`state`).
 ///
 /// The function determines whether to run the actor's real internal logic or a simulated
 /// behavior (for testing or orchestration). The internal logic is responsible for
 /// generating a sequence of numbers and sending them in batches to the output channel,
-/// while maintaining robust, persistent state.
+/// while maintaining robust, reliable state.
 pub async fn run(
     actor: SteadyActorShadow,
     generated_tx: SteadyTx<u64>,
@@ -88,7 +88,7 @@ async fn internal_behavior<A: SteadyActor>(
 
     // Main loop: continue running as long as the actor system is active and the
     // output channel is open.
-    while actor.is_running(|| i!(generated.mark_closed())) {
+    while actor.is_running(|| generated.mark_closed()) {
         // Wait until there is enough space in the output channel to send a full batch.
         await_for_all!(actor.wait_vacant(&mut generated, wait_for));
 

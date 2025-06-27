@@ -1,10 +1,10 @@
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
 
-/// Persistent state for the Logger actor.
+/// Reliable state for the Logger actor.
 ///
 /// This struct tracks all statistics and counters needed for robust, high-throughput logging.
-/// By storing these values in persistent state, the logger can recover from panics or restarts
+/// By storing these values in a reliable state, the logger can recover from panics or restarts
 /// without losing track of how many messages have been processed or the breakdown of Fizz/Buzz types.
 pub(crate) struct LoggerState {
     /// Total number of messages logged by this actor.
@@ -52,8 +52,8 @@ pub async fn run(
 /// This function implements the main loop for processing and logging FizzBuzz messages.
 /// It uses batching to maximize throughput, and it ensures that all state changes
 /// (such as incrementing counters) are only made after successful operations.
-/// The function is robust to failures: if the actor panics or crashes, the persistent
-/// state ensures that it can resume without data loss or duplication.
+/// The function is robust to failures: if the actor panics or crashes, the reliable
+/// steady state ensures that it can resume without data loss or duplication.
 ///
 /// The function also periodically logs statistics for monitoring and diagnostics.
 async fn internal_behavior<A: SteadyActor>(

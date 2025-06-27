@@ -69,7 +69,6 @@ async fn internal_behavior<A: SteadyActor>(
 
     while actor.is_running(|| {
              heartbeat.is_closed_and_empty()
-            //skipped on purpose: && generator.is_closed_and_empty()
             && logger.mark_closed()
     }) {
         // Wait for a heartbeat, enough input, and enough output space
@@ -84,8 +83,8 @@ async fn internal_behavior<A: SteadyActor>(
         state.heartbeats_processed += 1;
 
         // Zero-copy: get slices for input and output
-        let (peek_a, peek_b) = actor.peek_slice(&mut generator);
-        let (poke_a, poke_b) = actor.poke_slice(&mut logger);
+        let (peek_a, peek_b) = actor.peek_slice(&mut generator);    //#!#//
+        let (poke_a, poke_b) = actor.poke_slice(&mut logger);    //#!#//
 
         // We need to process exactly VALUES_PER_HEARTBEAT items
         let mut remaining = VALUES_PER_HEARTBEAT;
@@ -143,14 +142,14 @@ async fn internal_behavior<A: SteadyActor>(
         assert_eq!(
             total_taken,
             actor
-                .advance_send_index(&mut logger, total_taken)
+                .advance_send_index(&mut logger, total_taken)    //#!#//
                 .item_count(),
             "move write position"
         );
         assert_eq!(
             total_taken,
             actor
-                .advance_take_index(&mut generator, total_taken)
+                .advance_take_index(&mut generator, total_taken)    //#!#//
                 .item_count(),
             "move read position"
         );

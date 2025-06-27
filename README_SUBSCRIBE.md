@@ -66,3 +66,4 @@ To run manually (without the runner):
 3. Monitor telemetry at `http://127.0.0.1:5552`.
 
 Typically, the runner launches the subscriber after the publisher.
+When reviewing the source code, look for //#!#// which demonstrate key ideas you need to know.

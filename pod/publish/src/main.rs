@@ -73,7 +73,7 @@ const NAME_PUBLISH: &str = "PUBLISH";
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up telemetry server environment variables for observability.
     unsafe {
-        env::set_var("TELEMETRY_SERVER_PORT", "5551");
+        env::set_var("TELEMETRY_SERVER_PORT", "5551");          //#!#//
         env::set_var("TELEMETRY_SERVER_IP", "127.0.0.1");
     }
 
@@ -81,12 +81,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli_args = MainArg::parse();
 
     // Initialize logging at Info level for runtime diagnostics and performance output.
-    let _ = init_logging(LogLevel::Info);
+    init_logging(LogLevel::Info)?;
 
     // Build the actor graph with all channels and actors, using the parsed arguments.
     // The shutdown barrier ensures the system waits for two shutdown signals before exiting.
     let mut graph = GraphBuilder::default()
-        .with_shutdown_barrier(2) // Ensures robust, coordinated shutdown across distributed systems.
+        .with_shutdown_barrier(2) // Ensures robust, coordinated shutdown across distributed systems.  //#!#//
         .build(cli_args);
 
     build_graph(&mut graph);
@@ -169,17 +169,15 @@ fn build_graph(graph: &mut Graph) {
                , SoloAct);
 
     // === Aeron Output Configuration ===
-    //
     // The Aeron channel is configured for IPC (inter-process communication) by default.
-    // You can switch to UDP or multicast by uncommenting the relevant sections.
+    // You can switch to UDP point to point. Both publish and subscribe must agree.
     // Aeron is a high-performance, low-latency messaging system ideal for distributed streaming.
     //
-
     let use_ipc = false;
 
     let aeron_config = AeronConfig::new();
 
-    let aeron_config = if use_ipc {
+    let aeron_config = if use_ipc {                 //#!#//
         aeron_config.with_media_type(MediaType::Ipc)
     } else {
         aeron_config.with_media_type(MediaType::Udp)
@@ -196,7 +194,7 @@ fn build_graph(graph: &mut Graph) {
     info!("publish to aeron: {:?}", aeron_channel.cstring());
 
     // Build the final aqueduct (stream output) actor, which streams data over Aeron.
-    output_rx.build_aqueduct(
+    output_rx.build_aqueduct(                   //#!#//
         AqueTech::Aeron(aeron_channel, 40), // 40 = max in-flight messages
         &mut actor_builder.with_name(NAME_PUBLISH),
         SoloAct,

@@ -46,6 +46,16 @@ The publisher and subscriber pods communicate over Aeron, a high-performance mes
 
 Aeron configuration (e.g., IPC vs. UDP, IP, port) is passed to the pods via command-line arguments. For details, see the [Publisher README](#readme-2-publisher) and [Server README](#readme-3-server).
 
+### Setup Aeron
+To make use of aeron the aeron media driver must be installed on your machine in order to route messages.
+
+All the details for installation are found in the platform-specific Readme found in install_aeron folder.
+
+The default setup is for greater throughput and should be able to saturate a 2.5Gb ethernet connection.
+You can modify the installer to use smaller buffer if you want to minimize your memory usage.
+With the right settings, the aeron media driver can be under 20MB.
+If you need configurations for 10Gb or faster you should review [aeron.io/docs](https://aeron.io/docs/aeron/media-driver/)
+
 ## Usage
 
 To run the system:
@@ -56,5 +66,6 @@ To run the system:
 4. Use Ctrl-C to terminate all pods cleanly.
 
 The runner logs build and launch progress, including build times stored in temporary files for reference.
+When reviewing the source code, look for //#!#// which demonstrate key ideas you need to know.
 
 

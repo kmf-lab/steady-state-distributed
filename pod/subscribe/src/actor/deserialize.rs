@@ -20,7 +20,7 @@ pub(crate) struct DeserializeState {
 /// - `actor`: The actor context, managing lifecycle and providing access to arguments and control.
 /// - `input`: Input bundle with two stream channels (heartbeat and generator), each with control and payload.
 /// - `heartbeat`, `generator`: Output channels for deserialized `u64` values.
-/// - `state`: Persistent state for tracking shutdown and sequence.
+/// - `state`: Reliable state for tracking shutdown and sequence.
 ///
 /// Links the actor to its input/output channels, then delegates to the core processing logic.
 pub(crate) async fn run(
@@ -58,8 +58,8 @@ const MAX_BATCH: usize = 8192;
 /// systems where data loss or duplication can occur.
 async fn internal_behavior<A: SteadyActor>(
     mut actor: A,
-    input: SteadyStreamRxBundle<StreamIngress, 2>,
-    heartbeat: SteadyTx<u64>,
+    input: SteadyStreamRxBundle<StreamIngress, 2>,      //#!#//
+    heartbeat: SteadyTx<u64>,               //#!#//
     generator: SteadyTx<u64>,
     state: SteadyState<DeserializeState>,
 ) -> Result<(), Box<dyn Error>> {
@@ -67,7 +67,7 @@ async fn internal_behavior<A: SteadyActor>(
     let mut input = input.lock().await;
     let mut rx_generator = input.remove(1); // Generator stream (index 1)
     let mut rx_heartbeat = input.remove(0); // Heartbeat stream (index 0)
-    drop(input);
+    drop(input);            //#!#//
 
     // Lock output channels for sending deserialized data.
     let mut tx_heartbeat = heartbeat.lock().await;
@@ -82,13 +82,12 @@ async fn internal_behavior<A: SteadyActor>(
 
     // Main processing loop: runs until the actor shuts down or streams are exhausted.
     while actor.is_running(|| {
-                        rx_heartbeat.is_closed_and_empty() // messy do not use is closed??
-                        // && rx_generator.is_closed_and_empty()
+                        rx_heartbeat.is_closed_and_empty()
                         && tx_generator.mark_closed()
                         && tx_heartbeat.mark_closed()
     }) {
         // Wait for data availability in either stream and space in output channels.
-        await_for_any!(
+        await_for_any!(      //#!#//
             wait_for_all!(
                 actor.wait_avail(&mut rx_heartbeat, 1),
                 actor.wait_vacant(&mut tx_heartbeat, 1)
@@ -113,7 +112,6 @@ async fn internal_behavior<A: SteadyActor>(
                     "Heartbeat sequence error: expected {}, got {}",
                     expected, got
                 ),
-                "heartbeat",
             )
                 .await?;
             state.next_heartbeat = next_heartbeat;
@@ -134,7 +132,6 @@ async fn internal_behavior<A: SteadyActor>(
                     "Generator sequence error: expected {}, got {}",
                     expected, got
                 ),
-                "generator",
             )
                 .await?;
             state.next_generator = next_generator;
@@ -143,7 +140,7 @@ async fn internal_behavior<A: SteadyActor>(
 
         // If two shutdown signals have been received, request shutdown.
         if state.shutdown_count >= 2 {
-            actor.request_shutdown().await;
+            actor.request_shutdown().await; //#!#//
         }
     }
     info!("Deserialization actor shut down");
@@ -163,7 +160,6 @@ async fn internal_behavior<A: SteadyActor>(
 /// - `next_expected`: Mutable reference to the next expected sequence number.
 /// - `shutdown_count`: Mutable reference to the shutdown signal counter.
 /// - `on_seq_error`: Closure to call on sequence error (for panic or error reporting).
-/// - `stream_name`: Name of the stream (for logging).
 async fn process_stream<A: SteadyActor, F>(
     actor: &mut A,
     rx: &mut StreamRx<StreamIngress>,
@@ -171,7 +167,6 @@ async fn process_stream<A: SteadyActor, F>(
     next_expected: &mut u64,
     shutdown_count: &mut i32,
     on_seq_error: F,
-    _stream_name: &'static str, // unused, suppress warning
 ) -> Result<(), Box<dyn Error>>
 where
     F: Fn(u64, u64),
@@ -180,8 +175,8 @@ where
     let mut combined = Vec::with_capacity(MAX_BATCH * 8);
 
     // Peek control and payload slices (may be split due to ring buffer wraparound).
-    let (peek_control_a, peek_control_b, peek_payload_a, peek_payload_b) = actor.peek_slice(rx);
-    let (poke_a, poke_b) = actor.poke_slice(tx);
+    let (peek_control_a, peek_control_b, peek_payload_a, peek_payload_b) = actor.peek_slice(rx);    //#!#//
+    let (poke_a, poke_b) = actor.poke_slice(tx);    //#!#//
 
     let mut control_pos = 0;
     let mut payload_pos = 0;
@@ -276,8 +271,8 @@ where
     }
 
     // Advance indices to reflect processed data.
-    actor.advance_take_index(rx, (control_pos, payload_pos));
-    actor.advance_send_index(tx, output_pos);
+    actor.advance_take_index(rx, (control_pos, payload_pos));    //#!#//
+    actor.advance_send_index(tx, output_pos);    //#!#//
 
     Ok(())
 }

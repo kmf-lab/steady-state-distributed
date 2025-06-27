@@ -113,6 +113,6 @@ try {
 
 # If the output file does not end with .txt, create a copy with .txt appended
 if (-not $outputFile.EndsWith('.txt')) {
-    $txtFile = "$outputFile.txt"
+    $txtFile = "..\lesson-02C-distributed-runner.md.txt"
     Copy-Item -Path $outputFile -Destination $txtFile
 }
