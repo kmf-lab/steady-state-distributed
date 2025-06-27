@@ -75,6 +75,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build the actor graph with all channels and actors, using the parsed arguments.
     // The shutdown barrier ensures the system waits for two shutdown signals before exiting.
     let mut graph = GraphBuilder::default()
+        .with_telemtry_production_rate_ms(200) // Lower framerate for more throughput.
         .build(cli_args);
 
     build_graph(&mut graph);
