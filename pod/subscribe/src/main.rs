@@ -167,24 +167,24 @@ fn build_graph(graph: &mut Graph) {
     let state = new_state();
     actor_builder.with_name(NAME_DESERIALIZE)
         .build(
-            move |context| { actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone(), state.clone()) },
-            SoloAct
+            move |context| actor::deserialize::run(context, input_rx.clone(), heartbeat_tx.clone(), generator_tx.clone(), state.clone())
+            , SoloAct
         );
 
     // Build the worker actor, which applies FizzBuzz logic.
     let state = new_state();
     actor_builder.with_name(NAME_WORKER)
         .build(
-            move |context| { actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone(), state.clone()) },
-            SoloAct
+            move |context| actor::worker::run(context, heartbeat_rx.clone(), generator_rx.clone(), worker_tx.clone(), state.clone())
+            , SoloAct
         );
 
     // Build the logger actor, which logs FizzBuzz results.
     let state = new_state();
     actor_builder.with_name(NAME_LOGGER)
         .build(
-            move |context| { actor::logger::run(context, worker_rx.clone(), state.clone()) },
-            SoloAct
+            move |context| actor::logger::run(context, worker_rx.clone(), state.clone())
+            , SoloAct
         );
 }
 

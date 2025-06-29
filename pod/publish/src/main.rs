@@ -155,18 +155,18 @@ fn build_graph(graph: &mut Graph) {
     // Build the heartbeat actor.
     let state = new_state();
     actor_builder.with_name(NAME_HEARTBEAT)
-        .build(move |context| { actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone()) }
+        .build(move |context| actor::heartbeat::run(context, heartbeat_tx.clone(), state.clone())
                , MemberOf(&mut troupe));
 
     // Build the generator actor.
     let state = new_state();
     actor_builder.with_name(NAME_GENERATOR)
-        .build(move |context| { actor::generator::run(context, generator_tx.clone(), state.clone()) }
+        .build(move |context| actor::generator::run(context, generator_tx.clone(), state.clone())
                , MemberOf(&mut troupe));
 
     // Build the serialize actor, which batches and serializes data for streaming.
     actor_builder.with_name(NAME_SERIALIZE)
-        .build(move |context| { actor::serialize::run(context, heartbeat_rx.clone(), generator_rx.clone(), output_tx.clone()) }
+        .build(move |context| actor::serialize::run(context, heartbeat_rx.clone(), generator_rx.clone(), output_tx.clone())
                , SoloAct);
 
     // === Aeron Output Configuration ===
