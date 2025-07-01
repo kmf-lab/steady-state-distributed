@@ -1,5 +1,6 @@
 use steady_state::*;
 use crate::actor::worker::FizzBuzzMessage;
+use crate::arg::MainArg;
 
 /// Reliable state for the Logger actor.
 ///
@@ -171,7 +172,7 @@ fn test_logger() -> Result<(), Box<dyn std::error::Error>> {
     let _guard = start_log_capture();
     use std::thread::sleep;
 
-    let mut graph = GraphBuilder::for_testing().build(());
+    let mut graph = GraphBuilder::for_testing().build(MainArg::default());
     let (fizz_buzz_tx, fizz_buzz_rx) = graph.channel_builder()
         .with_capacity(4096) // Large capacity for performance
         .build();

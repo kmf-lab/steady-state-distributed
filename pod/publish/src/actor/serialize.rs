@@ -71,6 +71,7 @@ async fn internal_behavior<A: SteadyActor>(
     let wait_generator_in = rx_generator.capacity() / 2;  // Min input items
     let wait_heartbeat_out = tx_heartbeat.capacity().0 / 2; // Min output space (control channel)
     let wait_generator_out = tx_generator.capacity().0 / 2; // Min output space (control channel)
+    let max_latency = Duration::from_millis(500);
 
     // Main loop: continue running as long as the actor is active and the channels are not closed.
     // The closure checks for shutdown conditions and closes output channels when done.
@@ -82,6 +83,7 @@ async fn internal_behavior<A: SteadyActor>(
         // Wait for either sufficient input/output or any data in a closed input channel.
         // This uses "await_for_any" to allow either stream to be processed as soon as it is ready.
         let _clean = await_for_any!(                          //#!#//
+            actor.wait_periodic(max_latency), //required  for testing
             wait_for_all!(
                 // If the rx is closed, this will return immediately.
                 actor.wait_avail(&mut rx_heartbeat, wait_heartbeat_in),

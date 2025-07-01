@@ -155,12 +155,13 @@ async fn internal_behavior<A: SteadyActor>(
 pub(crate) mod generator_tests {
     use std::thread::sleep;
     use steady_state::*;
+    use crate::arg::MainArg;
     use super::*;
 
     #[test]
     fn test_generator() -> Result<(), Box<dyn Error>> {
         // Create a test graph (actor system) with default configuration.
-        let mut graph = GraphBuilder::for_testing().build(());
+        let mut graph = GraphBuilder::for_testing().build(MainArg::default());
 
         // Create a channel for the generator to send messages, with a larger capacity
         // to allow for batch processing during the test.

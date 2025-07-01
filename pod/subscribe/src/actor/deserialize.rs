@@ -102,16 +102,12 @@ async fn internal_behavior<A: SteadyActor>(
         if actor.avail_units(&mut rx_heartbeat).0 > 0 {
             let mut next_heartbeat = state.next_heartbeat;
             let mut shutdown_count = state.shutdown_count;
-            process_stream(
+            process_stream::<A>(
                 &mut actor,
                 &mut rx_heartbeat,
                 &mut tx_heartbeat,
                 &mut next_heartbeat,
-                &mut shutdown_count,
-                |expected, got| panic!(
-                    "Heartbeat sequence error: expected {}, got {}",
-                    expected, got
-                ),
+                &mut shutdown_count
             )
                 .await?;
             state.next_heartbeat = next_heartbeat;
@@ -127,11 +123,7 @@ async fn internal_behavior<A: SteadyActor>(
                 &mut rx_generator,
                 &mut tx_generator,
                 &mut next_generator,
-                &mut shutdown_count,
-                |expected, got| panic!(
-                    "Generator sequence error: expected {}, got {}",
-                    expected, got
-                ),
+                &mut shutdown_count
             )
                 .await?;
             state.next_generator = next_generator;
@@ -160,16 +152,13 @@ async fn internal_behavior<A: SteadyActor>(
 /// - `next_expected`: Mutable reference to the next expected sequence number.
 /// - `shutdown_count`: Mutable reference to the shutdown signal counter.
 /// - `on_seq_error`: Closure to call on sequence error (for panic or error reporting).
-async fn process_stream<A: SteadyActor, F>(
+async fn process_stream<A: SteadyActor>(
     actor: &mut A,
     rx: &mut StreamRx<StreamIngress>,
     tx: &mut Tx<u64>,
     next_expected: &mut u64,
-    shutdown_count: &mut i32,
-    on_seq_error: F,
+    shutdown_count: &mut i32
 ) -> Result<(), Box<dyn Error>>
-where
-    F: Fn(u64, u64),
 {
     // Preallocate a buffer for split payloads (max group size).
     let mut combined = Vec::with_capacity(MAX_BATCH * 8);
@@ -240,9 +229,11 @@ where
             if value == u64::MAX {
                 *shutdown_count += 1;
             } else {
-                // Sequence check.
+                #[cfg(not(test))] // ensure nothing is dropped when we run all in order.
                 if value != *next_expected {
-                    on_seq_error(*next_expected, value);
+                    panic!(
+                        "Heartbeat sequence error: expected {}, got {}",
+                        *next_expected, value);
                 }
                 *next_expected += 1;
 

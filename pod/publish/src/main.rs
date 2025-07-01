@@ -217,7 +217,7 @@ pub(crate) mod publish_main_tests {
     fn graph_test() -> Result<(), Box<dyn Error>> {
         // Initialize test graph with reasonable arguments
         let mut graph = GraphBuilder::for_testing()
-            .build(MainArg::default());
+                                .build(MainArg::default());
 
         build_graph(&mut graph);
         graph.start();
