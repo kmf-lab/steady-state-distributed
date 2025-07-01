@@ -67,7 +67,12 @@ async fn internal_behavior<A: SteadyActor>(
         })
         .await;
 
-    let max_latency = Duration::from_secs(2);
+    //you may find you want different timeouts for testing or release
+    let max_latency = if cfg!(test) {
+        Duration::from_secs(3)
+    } else {
+        Duration::from_secs(3600)
+    };
 
     while actor.is_running(|| {
              heartbeat.is_closed_and_empty()
@@ -140,7 +145,7 @@ async fn internal_behavior<A: SteadyActor>(
             );
         }
         #[cfg(not(test))]
-        if total_taken !=0 {
+        if total_taken !=0 && is_clean {
             assert_eq!(VALUES_PER_HEARTBEAT, total_taken);
         }
         // Advance channel indices

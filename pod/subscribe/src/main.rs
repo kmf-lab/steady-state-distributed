@@ -225,7 +225,7 @@ pub(crate) mod subscribe_main_tests {
                                                                                    ,&[0, 0, 0, 0, 0, 0, 0, 0]))
         )?;
         stage_manager.actor_perform(NAME_LOGGER,
-                                    StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(60))
+                                    StageWaitFor::Message(FizzBuzzMessage::FizzBuzz, Duration::from_secs(30))
         )?;
 
         stage_manager.final_bow();
