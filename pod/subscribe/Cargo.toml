@@ -1,8 +1,8 @@
 [package]
 name = "subscribe"
-version = "0.2.3"
+version = "0.2.4"
 edition = "2024"
 
 [dependencies]
-steady_state     = "0.2.3"
-clap             = { version = "4.5.41", features = ["derive"] }
+steady_state = "0.2.4"
+clap             = { version = "4.5.41", features = ["derive"] }# FAILED TESTS against ../steady-state-stack/core -- needs manual debugging
